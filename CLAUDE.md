@@ -21,8 +21,16 @@ buffs/debuffs.
 ## Sources de vérité
 
 - **Plan approuvé** (fait foi pour tous les détails) : `C:\Users\Louis\.claude\plans\tidy-conjuring-salamander.md`
-- **Prompt directeur** : `init-prompt.md` (à la racine du dossier)
 - En cas de doute sur un détail, relire le plan **avant** de coder.
+
+## Workflow Git — IMPORTANT
+
+- **Ne JAMAIS pousser sur `main` ni `develop`** (ni y committer directement).
+  Ces branches sont réservées ; toute modification passe **systématiquement par
+  une Pull Request**.
+- Cycle : créer une **branche dédiée** (`feature/…`, `fix/…`, `docs/…`) →
+  committer dessus → pousser **la branche** → ouvrir une **PR** (cible `develop`
+  par défaut).
 
 ## Décisions verrouillées — NE PAS rediscuter
 
