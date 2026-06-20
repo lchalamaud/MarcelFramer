@@ -222,6 +222,16 @@ function ns:ApplySavedColors()
             ns.classBarColors[class] = entry
         end
     end
+    if db.powerColors then
+        for token, rgb in pairs(db.powerColors) do
+            ns.powerColors[token] = { rgb[1], rgb[2], rgb[3] }
+        end
+    end
+    if db.reactionColors then
+        for cat, rgb in pairs(db.reactionColors) do
+            ns.reactionColors[cat] = { rgb[1], rgb[2], rgb[3] }
+        end
+    end
 end
 
 -- Re-applique couleurs de vie + nom sur toutes les frames (apercu live des reglages)
@@ -231,6 +241,7 @@ function ns:RefreshAll()
         local frame = data.frame
         if frame.health then
             E.UpdateHealth(frame)
+            E.UpdatePower(frame)
             E.UpdateName(frame)
         end
     end
@@ -318,6 +329,8 @@ f:SetScript("OnEvent", function(self, event)
         MarcelFramerDB = MarcelFramerDB or {}
         MarcelFramerDB.positions = MarcelFramerDB.positions or {}
         MarcelFramerDB.classBarColors = MarcelFramerDB.classBarColors or {}
+        MarcelFramerDB.powerColors = MarcelFramerDB.powerColors or {}
+        MarcelFramerDB.reactionColors = MarcelFramerDB.reactionColors or {}
         MarcelFramerDB.sizes = MarcelFramerDB.sizes or {}
         ns:ApplySavedColors()
         ns:ApplySavedSizes()

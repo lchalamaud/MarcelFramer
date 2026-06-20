@@ -33,6 +33,39 @@ ns.classBarColors = {
     ROGUE       = { left = {0.780, 0.714, 0.231}, right = {0.875, 0.808, 0.400} }, -- C7B63B -> DFCE66
 }
 
+-- Couleurs des barres de RESSOURCE, par type de pouvoir (jeton renvoye par
+-- UnitPowerType). Couleur unie {r,g,b} en 0-1 ; le degrade eventuel est derive
+-- par luminosite (voir barStyle/barGradient). Les jetons absents ici (CHI,
+-- HOLY_POWER, COMBO_POINTS, ...) retombent sur PowerBarColor Blizzard.
+-- Editable aussi via la fenetre /mf config (onglet "Ressources & PNJ").
+ns.powerColors = {
+    MANA        = {0.20, 0.40, 0.95}, -- 3366F2
+    RAGE        = {0.78, 0.20, 0.20}, -- C73333
+    ENERGY      = {0.90, 0.82, 0.25}, -- E6D140
+    FOCUS       = {0.90, 0.55, 0.30}, -- E68C4D
+    RUNIC_POWER = {0.30, 0.70, 0.85}, -- 4DB3D9
+}
+
+-- Couleurs de reaction des PNJ (et de toute unite sans couleur de classe).
+-- Categorie derivee de UnitReaction (1-8) : <=2 hostile, 3 non amical (unfriendly),
+-- 4 neutre, >=5 amical. Couleur unie {r,g,b} prise telle quelle (WYSIWYG, pas
+-- d'adoucissement colorAdjust). Editable via /mf config.
+ns.reactionColors = {
+    hostile    = {0.75, 0.24, 0.24}, -- C73D3D
+    unfriendly = {0.80, 0.52, 0.26}, -- CC8542
+    neutral    = {0.80, 0.72, 0.26}, -- CCB842
+    friendly   = {0.34, 0.63, 0.34}, -- 57A157
+}
+
+-- Mappe une valeur de UnitReaction (1-8) vers une cle de ns.reactionColors.
+function ns.ReactionCategory(reaction)
+    if not reaction then return nil end
+    if reaction <= 2 then return "hostile"
+    elseif reaction == 3 then return "unfriendly"
+    elseif reaction == 4 then return "neutral"
+    else return "friendly" end
+end
+
 -- Comportement global
 ns.config = {
     -- Masquage des cadres Blizzard par defaut.

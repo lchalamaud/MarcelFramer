@@ -1,7 +1,10 @@
 local addonName, ns = ...
 
 -- ============================================================================
---  Options.lua — Fenetre de configuration des couleurs par classe (/mf config)
+--  Options.lua — Fenetre de configuration (/mf config), en onglets :
+--    1. Classes            : couleurs des barres de vie par classe (degrade)
+--    2. Ressources & PNJ   : couleurs des ressources + couleurs de reaction PNJ
+--    3. Cadres             : tailles et positions des cadres
 --  API pure : frame maison + ColorPickerFrame Blizzard. Chaque teinte est
 --  editable via une pastille (color picker) OU un champ hexa. Sauvegarde dans
 --  MarcelFramerDB ; apercu live via ns:RefreshAll().
@@ -14,43 +17,48 @@ local CLASS_ORDER = {
     "SHAMAN", "MAGE", "WARLOCK", "HUNTER", "ROGUE",
 }
 
--- Copie profonde des defauts (pour /reset), prise avant toute fusion DB
-local DEFAULTS = {}
+-- Jetons de ressource exposes (ordre d'affichage). Les autres retombent sur
+-- PowerBarColor Blizzard et ne sont pas editables ici.
+local POWER_ORDER = {
+    { key = "MANA",        label = "Mana"              },
+    { key = "RAGE",        label = "Rage"              },
+    { key = "ENERGY",      label = "Energie"           },
+    { key = "FOCUS",       label = "Focalisation"      },
+    { key = "RUNIC_POWER", label = "Puissance runique" },
+}
+
+-- Categories de reaction PNJ (cf. ns.ReactionCategory).
+local REACTION_ORDER = {
+    { key = "hostile",    label = "Hostile"    },
+    { key = "unfriendly", label = "Non amical" },
+    { key = "neutral",    label = "Neutre"     },
+    { key = "friendly",   label = "Amical"     },
+}
+
+-- Copie profonde des defauts (pour /reset), prise AVANT toute fusion DB
+-- (ce fichier s'execute au chargement, donc avant ApplySavedColors @ PLAYER_LOGIN).
+local CLASS_DEFAULTS = {}
 for class, sides in pairs(ns.classBarColors or {}) do
-    DEFAULTS[class] = {
+    CLASS_DEFAULTS[class] = {
         left  = { sides.left[1],  sides.left[2],  sides.left[3] },
         right = { sides.right[1], sides.right[2], sides.right[3] },
     }
 end
+local POWER_DEFAULTS = {}
+for k, c in pairs(ns.powerColors or {}) do POWER_DEFAULTS[k] = { c[1], c[2], c[3] } end
+local REACTION_DEFAULTS = {}
+for k, c in pairs(ns.reactionColors or {}) do REACTION_DEFAULTS[k] = { c[1], c[2], c[3] } end
 
 local frame
-local lockBtn         -- bouton bascule verrouiller/deverrouiller les cadres
-local swatches = {}   -- class -> { left, right, leftHex, rightHex, label }
+local panels      = {}   -- onglet index -> frame conteneur
+local tabButtons  = {}
+local lockBtn            -- bouton bascule verrouiller/deverrouiller les cadres
+local swatches    = {}   -- class -> { left, right, leftHex, rightHex, label } (degrade)
+local singleRows  = {}   -- liste { tex, hex, label?, get } (ressources + PNJ)
 
--- Section "Tailles des cadres" : cadre selectionne + sliders + position (X/Y).
--- Le meme selecteur de cadre (grille 2x2) pilote les sliders de taille ET les
--- champs de position.
--- Ordre = disposition de la grille 2x2 (ligne du haut puis ligne du bas).
--- Bas : Familier a gauche (sous le joueur), Cible-cible a droite (sous la cible).
-local SIZE_KEYS = {
-    { key = "player",       label = "Joueur"      },
-    { key = "target",       label = "Cible"       },
-    { key = "pet",          label = "Familier"    },
-    { key = "targettarget", label = "Cible-cible" },
-}
-local SIZE_SLIDERS = {
-    { field = "width",  label = "Largeur", min = 60,  max = 400, step = 1    },
-    { field = "height", label = "Hauteur", min = 16,  max = 140, step = 1    },
-    { field = "scale",  label = "Echelle", min = 0.5, max = 2.0, step = 0.05 },
-}
-local sizeState = { currentKey = "player", sliders = {}, selButtons = {} }
-
-local function fmtSize(field, v)
-    if field == "scale" then return string.format("%.2f", v) end
-    return tostring(math.floor(v + 0.5))
-end
-
--- Conversions hexa <-> rgb (0-1)
+-- ----------------------------------------------------------------------------
+--  Conversions hexa <-> rgb (0-1)
+-- ----------------------------------------------------------------------------
 local function RGBToHex(r, g, b)
     return string.format("%02X%02X%02X",
         math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5))
@@ -66,35 +74,9 @@ local function HexToRGB(hex)
     return r / 255, g / 255, b / 255
 end
 
--- Recharge l'affichage (pastilles, hexa, label) depuis ns.classBarColors
-local function refreshSwatches()
-    for class, row in pairs(swatches) do
-        local c = ns.classBarColors[class]
-        if c then
-            row.left.tex:SetColorTexture(c.left[1], c.left[2], c.left[3])
-            row.right.tex:SetColorTexture(c.right[1], c.right[2], c.right[3])
-            row.label:SetTextColor(c.right[1], c.right[2], c.right[3])
-            if not row.leftHex:HasFocus() then
-                row.leftHex:SetText(RGBToHex(c.left[1], c.left[2], c.left[3]))
-            end
-            if not row.rightHex:HasFocus() then
-                row.rightHex:SetText(RGBToHex(c.right[1], c.right[2], c.right[3]))
-            end
-        end
-    end
-end
-
--- Ecrit une teinte (runtime + DB) puis rafraichit tout
-local function saveColor(class, side, r, g, b)
-    local col = ns.classBarColors[class][side]
-    col[1], col[2], col[3] = r, g, b
-    MarcelFramerDB.classBarColors[class] = MarcelFramerDB.classBarColors[class] or {}
-    MarcelFramerDB.classBarColors[class][side] = { r, g, b }
-    refreshSwatches()
-    ns:RefreshAll()
-end
-
--- Selecteur de couleur Blizzard (API moderne, repli ancien systeme)
+-- ----------------------------------------------------------------------------
+--  Selecteur de couleur Blizzard (API moderne, repli ancien systeme)
+-- ----------------------------------------------------------------------------
 local function openPicker(r, g, b, apply)
     local function swatchFunc()
         apply(ColorPickerFrame:GetColorRGB())
@@ -115,7 +97,11 @@ local function openPicker(r, g, b, apply)
     end
 end
 
-local function makeSwatch(parent, class, side)
+-- ----------------------------------------------------------------------------
+--  Briques reutilisables : pastille + champ hexa (lies par get/apply/restore)
+-- ----------------------------------------------------------------------------
+-- Pastille cliquable (bordure + aplat). get() -> r,g,b ; apply(r,g,b).
+local function createSwatch(parent, get, apply)
     local b = CreateFrame("Button", nil, parent)
     b:SetSize(24, 16)
     local border = b:CreateTexture(nil, "BACKGROUND")
@@ -128,16 +114,15 @@ local function makeSwatch(parent, class, side)
     b:SetScript("OnEnter", function(s) s:SetAlpha(0.8) end)
     b:SetScript("OnLeave", function(s) s:SetAlpha(1) end)
     b:SetScript("OnClick", function()
-        local col = ns.classBarColors[class] and ns.classBarColors[class][side]
-        if not col then return end
-        openPicker(col[1], col[2], col[3], function(nr, ng, nb)
-            saveColor(class, side, nr, ng, nb)
-        end)
+        local r, g, b2 = get()
+        if not r then return end
+        openPicker(r, g, b2, apply)
     end)
     return b
 end
 
-local function makeHexBox(parent, class, side)
+-- Champ hexa. apply(r,g,b) si valide ; restore() sinon (et a l'echap).
+local function createHexBox(parent, apply, restore)
     local e = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
     e:SetSize(58, 18)
     e:SetAutoFocus(false)
@@ -145,29 +130,120 @@ local function makeHexBox(parent, class, side)
     e:SetFontObject("GameFontHighlightSmall")
     local function commit()
         local r, g, b = HexToRGB(e:GetText())
-        if r then
-            saveColor(class, side, r, g, b)
-        else
-            refreshSwatches()      -- entree invalide : on restaure l'affichage
-        end
+        if r then apply(r, g, b) else restore() end
         e:ClearFocus()
     end
     e:SetScript("OnEnterPressed", commit)
     e:SetScript("OnEditFocusLost", commit)
-    e:SetScript("OnEscapePressed", function(self) refreshSwatches(); self:ClearFocus() end)
+    e:SetScript("OnEscapePressed", function(self) restore(); self:ClearFocus() end)
     return e
 end
 
-local function resetAll()
+-- ----------------------------------------------------------------------------
+--  Rafraichissement de l'affichage des pastilles / champs hexa
+-- ----------------------------------------------------------------------------
+-- Couleurs de classe (degrade left/right)
+local function refreshSwatches()
+    for class, row in pairs(swatches) do
+        local c = ns.classBarColors[class]
+        if c then
+            row.left.tex:SetColorTexture(c.left[1], c.left[2], c.left[3])
+            row.right.tex:SetColorTexture(c.right[1], c.right[2], c.right[3])
+            row.label:SetTextColor(c.right[1], c.right[2], c.right[3])
+            if not row.leftHex:HasFocus() then
+                row.leftHex:SetText(RGBToHex(c.left[1], c.left[2], c.left[3]))
+            end
+            if not row.rightHex:HasFocus() then
+                row.rightHex:SetText(RGBToHex(c.right[1], c.right[2], c.right[3]))
+            end
+        end
+    end
+end
+
+-- Couleurs unies (ressources + PNJ)
+local function refreshSingleRows()
+    for _, row in ipairs(singleRows) do
+        local r, g, b = row.get()
+        if r then
+            row.tex:SetColorTexture(r, g, b)
+            if row.label then row.label:SetTextColor(r, g, b) end
+            if row.hex and not row.hex:HasFocus() then
+                row.hex:SetText(RGBToHex(r, g, b))
+            end
+        end
+    end
+end
+
+local function refreshColors()
+    refreshSwatches()
+    refreshSingleRows()
+end
+
+-- ----------------------------------------------------------------------------
+--  Sauvegarde d'une teinte (runtime + DB) puis apercu live
+-- ----------------------------------------------------------------------------
+-- Classe : ecrit le cote left/right
+local function saveClassColor(class, side, r, g, b)
+    local col = ns.classBarColors[class][side]
+    col[1], col[2], col[3] = r, g, b
+    MarcelFramerDB.classBarColors[class] = MarcelFramerDB.classBarColors[class] or {}
+    MarcelFramerDB.classBarColors[class][side] = { r, g, b }
+    refreshColors()
+    ns:RefreshAll()
+end
+
+-- Couleur unie : runtimeTbl[key] = {r,g,b}, persiste dans MarcelFramerDB[dbName][key]
+local function saveSingleColor(runtimeTbl, dbName, key, r, g, b)
+    local col = runtimeTbl[key]
+    col[1], col[2], col[3] = r, g, b
+    MarcelFramerDB[dbName][key] = { r, g, b }
+    refreshColors()
+    ns:RefreshAll()
+end
+
+-- ----------------------------------------------------------------------------
+--  Reinitialisations
+-- ----------------------------------------------------------------------------
+local function resetClassColors()
     wipe(MarcelFramerDB.classBarColors)
-    for class, def in pairs(DEFAULTS) do
+    for class, def in pairs(CLASS_DEFAULTS) do
         local entry = ns.classBarColors[class] or {}
         entry.left  = { def.left[1],  def.left[2],  def.left[3] }
         entry.right = { def.right[1], def.right[2], def.right[3] }
         ns.classBarColors[class] = entry
     end
-    refreshSwatches()
+    refreshColors()
     ns:RefreshAll()
+end
+
+local function resetSingleColors()
+    wipe(MarcelFramerDB.powerColors)
+    wipe(MarcelFramerDB.reactionColors)
+    for k, def in pairs(POWER_DEFAULTS)    do ns.powerColors[k]    = { def[1], def[2], def[3] } end
+    for k, def in pairs(REACTION_DEFAULTS) do ns.reactionColors[k] = { def[1], def[2], def[3] } end
+    refreshColors()
+    ns:RefreshAll()
+end
+
+-- ============================================================================
+--  Section TAILLES / POSITIONS (onglet "Cadres")
+-- ============================================================================
+local SIZE_KEYS = {
+    { key = "player",       label = "Joueur"      },
+    { key = "target",       label = "Cible"       },
+    { key = "pet",          label = "Familier"    },
+    { key = "targettarget", label = "Cible-cible" },
+}
+local SIZE_SLIDERS = {
+    { field = "width",  label = "Largeur", min = 60,  max = 400, step = 1    },
+    { field = "height", label = "Hauteur", min = 16,  max = 140, step = 1    },
+    { field = "scale",  label = "Echelle", min = 0.5, max = 2.0, step = 0.05 },
+}
+local sizeState = { currentKey = "player", sliders = {}, selButtons = {} }
+
+local function fmtSize(field, v)
+    if field == "scale" then return string.format("%.2f", v) end
+    return tostring(math.floor(v + 0.5))
 end
 
 -- Recharge les sliders + le bouton actif depuis ns.config[currentKey]
@@ -275,9 +351,219 @@ local function makeSizeSlider(parent, name, info)
     return s
 end
 
+-- ============================================================================
+--  Construction des onglets
+-- ============================================================================
+-- Onglet 1 : couleurs de classe
+local function buildClassPanel(panel)
+    local cb = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+    cb:SetSize(24, 24)
+    cb:SetPoint("TOPLEFT", 4, -6)
+    cb:SetChecked(ns.config.classGradient ~= false)
+    local cblbl = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    cblbl:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+    cblbl:SetText("Vie en degrade (sinon couleur unie = teinte de droite)")
+    cb:SetScript("OnClick", function(self)
+        local on = self:GetChecked() and true or false
+        ns.config.classGradient = on
+        MarcelFramerDB.classGradient = on
+        ns:RefreshAll()
+    end)
+
+    local hF = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    hF:SetPoint("TOPLEFT", 150, -36); hF:SetText("Fonce")
+    local hC = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    hC:SetPoint("TOPLEFT", 285, -36); hC:SetText("Clair")
+
+    local y = -52
+    for _, class in ipairs(CLASS_ORDER) do
+        if ns.classBarColors[class] then
+            local lbl = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            lbl:SetPoint("TOPLEFT", 8, y)
+            lbl:SetText((LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[class]) or class)
+
+            local lSw = createSwatch(panel,
+                function() local c = ns.classBarColors[class].left;  return c[1], c[2], c[3] end,
+                function(r, g, b) saveClassColor(class, "left", r, g, b) end)
+            lSw:SetPoint("TOPLEFT", 150, y + 1)
+            local lHex = createHexBox(panel,
+                function(r, g, b) saveClassColor(class, "left", r, g, b) end, refreshColors)
+            lHex:SetPoint("LEFT", lSw, "RIGHT", 8, 0)
+
+            local rSw = createSwatch(panel,
+                function() local c = ns.classBarColors[class].right; return c[1], c[2], c[3] end,
+                function(r, g, b) saveClassColor(class, "right", r, g, b) end)
+            rSw:SetPoint("TOPLEFT", 285, y + 1)
+            local rHex = createHexBox(panel,
+                function(r, g, b) saveClassColor(class, "right", r, g, b) end, refreshColors)
+            rHex:SetPoint("LEFT", rSw, "RIGHT", 8, 0)
+
+            swatches[class] = { left = lSw, right = rSw, leftHex = lHex, rightHex = rHex, label = lbl }
+            y = y - 26
+        end
+    end
+
+    local reset = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    reset:SetSize(150, 22)
+    reset:SetPoint("BOTTOMLEFT", 4, 4)
+    reset:SetText("Reinit. couleurs")
+    reset:SetScript("OnClick", resetClassColors)
+end
+
+-- Cree une rangee "couleur unie" : label + pastille + champ hexa, liee a
+-- runtimeTbl[key]. Enregistre la rangee pour le rafraichissement.
+local function addSingleRow(panel, x, y, labelText, runtimeTbl, dbName, key)
+    local lbl = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    lbl:SetPoint("TOPLEFT", x, y)
+    lbl:SetText(labelText)
+
+    local function get() local c = runtimeTbl[key]; return c[1], c[2], c[3] end
+    local function apply(r, g, b) saveSingleColor(runtimeTbl, dbName, key, r, g, b) end
+
+    local sw = createSwatch(panel, get, apply)
+    sw:SetPoint("TOPLEFT", x + 170, y + 1)
+    local hex = createHexBox(panel, apply, refreshColors)
+    hex:SetPoint("LEFT", sw, "RIGHT", 8, 0)
+
+    singleRows[#singleRows + 1] = { tex = sw.tex, hex = hex, label = lbl, get = get }
+end
+
+-- Onglet 2 : couleurs de ressource + couleurs de reaction PNJ
+local function buildResourcePanel(panel)
+    local pTitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    pTitle:SetPoint("TOPLEFT", 4, -8)
+    pTitle:SetText("Couleurs des ressources")
+
+    local y = -34
+    for _, e in ipairs(POWER_ORDER) do
+        addSingleRow(panel, 8, y, e.label, ns.powerColors, "powerColors", e.key)
+        y = y - 26
+    end
+
+    y = y - 16
+    local rTitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    rTitle:SetPoint("TOPLEFT", 4, y)
+    rTitle:SetText("Couleurs des PNJ (reaction)")
+    y = y - 26
+
+    for _, e in ipairs(REACTION_ORDER) do
+        addSingleRow(panel, 8, y, e.label, ns.reactionColors, "reactionColors", e.key)
+        y = y - 26
+    end
+
+    local reset = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    reset:SetSize(180, 22)
+    reset:SetPoint("BOTTOMLEFT", 4, 4)
+    reset:SetText("Reinit. ressources & PNJ")
+    reset:SetScript("OnClick", resetSingleColors)
+end
+
+-- Onglet 3 : tailles et positions des cadres
+local function buildFramesPanel(panel)
+    local sTitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    sTitle:SetPoint("TOPLEFT", 4, -8)
+    sTitle:SetText("Tailles des cadres")
+
+    -- Selecteur de cadre (grille 2x2)
+    for i, e in ipairs(SIZE_KEYS) do
+        local b = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+        b:SetSize(112, 22)
+        local col = (i - 1) % 2
+        local row = math.floor((i - 1) / 2)
+        b:SetPoint("TOPLEFT", 8 + col * 118, -30 - row * 26)
+        b:SetText(e.label)
+        b:SetScript("OnClick", function() selectSizeKey(e.key) end)
+        sizeState.selButtons[e.key] = b
+    end
+
+    -- Sliders Largeur / Hauteur / Echelle
+    wipe(sizeState.sliders)
+    for i, info in ipairs(SIZE_SLIDERS) do
+        local s = makeSizeSlider(panel, "MarcelFramerSizeSlider" .. info.field, info)
+        s:SetPoint("TOPLEFT", 16, -110 - (i - 1) * 50)
+        sizeState.sliders[i] = s
+    end
+
+    -- Position du cadre (coordonnees X / Y par rapport a l'ancrage courant)
+    local posTitle = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    posTitle:SetPoint("TOPLEFT", 4, -266)
+    posTitle:SetText("Position")
+
+    local xLbl = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    xLbl:SetPoint("TOPLEFT", 16, -288)
+    xLbl:SetText("X :")
+    sizeState.posX = makePosBox(panel)
+    sizeState.posX:SetPoint("LEFT", xLbl, "RIGHT", 6, 0)
+
+    local yLbl = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    yLbl:SetPoint("LEFT", sizeState.posX, "RIGHT", 16, 0)
+    yLbl:SetText("Y :")
+    sizeState.posY = makePosBox(panel)
+    sizeState.posY:SetPoint("LEFT", yLbl, "RIGHT", 6, 0)
+
+    -- Bouton bascule : deverrouiller pour deplacer les cadres a la souris
+    lockBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    lockBtn:SetSize(160, 22)
+    lockBtn:SetPoint("TOPLEFT", 16, -314)
+    lockBtn:SetScript("OnClick", function()
+        if ns.unlocked then ns:Lock() else ns:Unlock() end
+        updateLockButton()
+        refreshSizeSliders()   -- les positions ont pu bouger
+    end)
+
+    local note = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    note:SetPoint("TOPLEFT", 4, -346)
+    note:SetWidth(280)
+    note:SetJustifyH("LEFT")
+    note:SetText("Ajuste hors combat (differe pendant le combat). |cffffff00/mf reset|r remet les positions par defaut.")
+
+    local resetSize = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    resetSize:SetSize(150, 22)
+    resetSize:SetPoint("BOTTOMRIGHT", -4, 4)
+    resetSize:SetText("Reinit. tailles")
+    resetSize:SetScript("OnClick", function()
+        ns:ResetSizes()
+        refreshSizeSliders()
+    end)
+end
+
+-- ----------------------------------------------------------------------------
+--  Onglets : affichage / bascule
+-- ----------------------------------------------------------------------------
+local function showTab(idx)
+    for i, p in ipairs(panels) do
+        if i == idx then p:Show() else p:Hide() end
+    end
+    for i, b in ipairs(tabButtons) do
+        if i == idx then b:LockHighlight() else b:UnlockHighlight() end
+    end
+end
+
+local function makeTabButton(text, idx, anchorTo)
+    local b = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    b:SetSize(150, 22)
+    if anchorTo then
+        b:SetPoint("LEFT", anchorTo, "RIGHT", 6, 0)
+    else
+        b:SetPoint("TOPLEFT", 14, -40)
+    end
+    b:SetText(text)
+    b:SetScript("OnClick", function() showTab(idx) end)
+    tabButtons[idx] = b
+    return b
+end
+
+local function makePanel()
+    local p = CreateFrame("Frame", nil, frame)
+    p:SetPoint("TOPLEFT", 12, -72)
+    p:SetPoint("BOTTOMRIGHT", -12, 12)
+    panels[#panels + 1] = p
+    return p
+end
+
 local function build()
     frame = CreateFrame("Frame", "MarcelFramerOptions", UIParent, "BackdropTemplate")
-    frame:SetSize(700, 470)
+    frame:SetSize(470, 480)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
     frame:SetBackdrop({
@@ -300,136 +586,20 @@ local function build()
     local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", -4, -4)
 
-    local cb = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
-    cb:SetSize(24, 24)
-    cb:SetPoint("TOPLEFT", 14, -40)
-    cb:SetChecked(ns.config.classGradient ~= false)
-    local cblbl = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    cblbl:SetPoint("LEFT", cb, "RIGHT", 2, 0)
-    cblbl:SetText("Vie en degrade (sinon couleur unie = teinte de droite)")
-    cb:SetScript("OnClick", function(self)
-        local on = self:GetChecked() and true or false
-        ns.config.classGradient = on
-        MarcelFramerDB.classGradient = on
-        ns:RefreshAll()
-    end)
+    -- Boutons d'onglets
+    local t1 = makeTabButton("Classes", 1)
+    local t2 = makeTabButton("Ressources & PNJ", 2, t1)
+    makeTabButton("Cadres", 3, t2)
 
-    -- colonnes : pastille a x=150 / 285, champ hexa juste a droite
-    local hF = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    hF:SetPoint("TOPLEFT", 150, -72); hF:SetText("Fonce")
-    local hC = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    hC:SetPoint("TOPLEFT", 285, -72); hC:SetText("Clair")
+    -- Panneaux (un par onglet, dans l'ordre des index)
+    buildClassPanel(makePanel())
+    buildResourcePanel(makePanel())
+    buildFramesPanel(makePanel())
 
-    local y = -88
-    for _, class in ipairs(CLASS_ORDER) do
-        if ns.classBarColors[class] then
-            local lbl = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            lbl:SetPoint("TOPLEFT", 18, y)
-            lbl:SetText((LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[class]) or class)
-
-            local lSw  = makeSwatch(frame, class, "left")
-            lSw:SetPoint("TOPLEFT", 150, y + 1)
-            local lHex = makeHexBox(frame, class, "left")
-            lHex:SetPoint("LEFT", lSw, "RIGHT", 8, 0)
-
-            local rSw  = makeSwatch(frame, class, "right")
-            rSw:SetPoint("TOPLEFT", 285, y + 1)
-            local rHex = makeHexBox(frame, class, "right")
-            rHex:SetPoint("LEFT", rSw, "RIGHT", 8, 0)
-
-            swatches[class] = { left = lSw, right = rSw, leftHex = lHex, rightHex = rHex, label = lbl }
-            y = y - 26
-        end
-    end
-
-    local reset = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    reset:SetSize(150, 22)
-    reset:SetPoint("BOTTOMLEFT", 16, 14)
-    reset:SetText("Reinit. couleurs")
-    reset:SetScript("OnClick", resetAll)
-
-    -- ----------------------------------------------------------------------
-    --  Colonne de droite : tailles des cadres
-    -- ----------------------------------------------------------------------
-    local divider = frame:CreateTexture(nil, "ARTWORK")
-    divider:SetColorTexture(1, 1, 1, 0.12)
-    divider:SetWidth(1)
-    divider:SetPoint("TOPLEFT", frame, "TOPLEFT", 404, -40)
-    divider:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 404, 44)
-
-    local RX = 432   -- origine x de la colonne tailles
-
-    local sTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    sTitle:SetPoint("TOPLEFT", RX, -46)
-    sTitle:SetText("Tailles des cadres")
-
-    -- Selecteur de cadre (grille 2x2)
-    for i, e in ipairs(SIZE_KEYS) do
-        local b = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-        b:SetSize(112, 22)
-        local col = (i - 1) % 2
-        local row = math.floor((i - 1) / 2)
-        b:SetPoint("TOPLEFT", RX + col * 118, -70 - row * 26)
-        b:SetText(e.label)
-        b:SetScript("OnClick", function()
-            selectSizeKey(e.key)
-        end)
-        sizeState.selButtons[e.key] = b
-    end
-
-    -- Sliders Largeur / Hauteur / Echelle
-    wipe(sizeState.sliders)
-    for i, info in ipairs(SIZE_SLIDERS) do
-        local s = makeSizeSlider(frame, "MarcelFramerSizeSlider" .. info.field, info)
-        s:SetPoint("TOPLEFT", RX + 8, -150 - (i - 1) * 50)
-        sizeState.sliders[i] = s
-    end
-
-    -- Position du cadre (coordonnees X / Y par rapport a l'ancrage courant)
-    local posTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    posTitle:SetPoint("TOPLEFT", RX, -304)
-    posTitle:SetText("Position")
-
-    local xLbl = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    xLbl:SetPoint("TOPLEFT", RX + 8, -326)
-    xLbl:SetText("X :")
-    sizeState.posX = makePosBox(frame)
-    sizeState.posX:SetPoint("LEFT", xLbl, "RIGHT", 6, 0)
-
-    local yLbl = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    yLbl:SetPoint("LEFT", sizeState.posX, "RIGHT", 16, 0)
-    yLbl:SetText("Y :")
-    sizeState.posY = makePosBox(frame)
-    sizeState.posY:SetPoint("LEFT", yLbl, "RIGHT", 6, 0)
-
-    -- Bouton bascule : deverrouiller pour deplacer les cadres a la souris
-    lockBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    lockBtn:SetSize(160, 22)
-    lockBtn:SetPoint("TOPLEFT", RX + 8, -350)
-    lockBtn:SetScript("OnClick", function()
-        if ns.unlocked then ns:Lock() else ns:Unlock() end
-        updateLockButton()
-        refreshSizeSliders()   -- les positions ont pu bouger
-    end)
-
-    local note = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    note:SetPoint("TOPLEFT", RX, -382)
-    note:SetWidth(236)
-    note:SetJustifyH("LEFT")
-    note:SetText("Ajuste hors combat (differe pendant le combat). |cffffff00/mf reset|r remet les positions par defaut.")
-
-    local resetSize = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    resetSize:SetSize(150, 22)
-    resetSize:SetPoint("BOTTOMRIGHT", -16, 14)
-    resetSize:SetText("Reinit. tailles")
-    resetSize:SetScript("OnClick", function()
-        ns:ResetSizes()
-        refreshSizeSliders()
-    end)
-
-    refreshSwatches()
+    refreshColors()
     refreshSizeSliders()
     updateLockButton()
+    showTab(1)
 end
 
 function ns.Options.Toggle()
@@ -437,7 +607,7 @@ function ns.Options.Toggle()
     if frame:IsShown() then
         frame:Hide()
     else
-        refreshSwatches()
+        refreshColors()
         refreshSizeSliders()
         updateLockButton()
         frame:Show()

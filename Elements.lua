@@ -75,9 +75,13 @@ function Elements.GetUnitColor(unit, cfg)
         local c = class and RAID_CLASS_COLORS[class]
         if c then return AdjustColor(c.r, c.g, c.b) end
     else
-        local reaction = UnitReaction(unit, "player")
-        local c = reaction and FACTION_BAR_COLORS[reaction]
-        if c then return AdjustColor(c.r, c.g, c.b) end
+        -- PNJ : couleur de reaction configurable (prise telle quelle, WYSIWYG)
+        local cat = ns.ReactionCategory(UnitReaction(unit, "player"))
+        local c = cat and ns.reactionColors and ns.reactionColors[cat]
+        if c then return c[1], c[2], c[3] end
+        -- Repli ultime sur la table Blizzard si la categorie est inconnue
+        local fc = FACTION_BAR_COLORS and FACTION_BAR_COLORS[UnitReaction(unit, "player") or 0]
+        if fc then return AdjustColor(fc.r, fc.g, fc.b) end
     end
     return 0.7, 0.7, 0.7
 end
@@ -538,11 +542,17 @@ function Elements.UpdatePower(frame)
     bar:SetMinMaxValues(0, max > 0 and max or 1)
     bar:SetValue(cur)
     local ptype, ptoken = UnitPowerType(unit)
-    local c = (ptoken and PowerBarColor[ptoken]) or PowerBarColor[ptype]
-    if c then
-        SetBarColor(bar, c.r, c.g, c.b)
+    -- Couleur configurable par jeton (ns.powerColors) ; repli PowerBarColor.
+    local cc = ptoken and ns.powerColors and ns.powerColors[ptoken]
+    if cc then
+        SetBarColor(bar, cc[1], cc[2], cc[3])
     else
-        SetBarColor(bar, 0.3, 0.3, 0.8)
+        local c = (ptoken and PowerBarColor[ptoken]) or PowerBarColor[ptype]
+        if c then
+            SetBarColor(bar, c.r, c.g, c.b)
+        else
+            SetBarColor(bar, 0.3, 0.3, 0.8)
+        end
     end
     if frame.powerText then
         frame.powerText:SetText(max > 0 and FormatNumber(cur) or "")
