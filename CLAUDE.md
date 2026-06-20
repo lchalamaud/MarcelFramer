@@ -37,6 +37,10 @@ buffs/debuffs.
 - **Ne JAMAIS valider / merger / fermer une PR de ma propre initiative** : c'est
   **toujours l'utilisateur** qui revoit et merge — **sauf s'il le demande
   explicitement**. Par défaut, mon rôle s'arrête à ouvrir et mettre à jour la PR.
+- **Autorisation permanente** : quand l'utilisateur me demande de « faire une PR »
+  (ou équivalent), je suis autorisé sans reconfirmer à : **créer une branche**,
+  **committer** (jamais directement sur `main` ni `develop`), **pousser la branche**
+  et **ouvrir la PR**. La validation/merge reste exclue (cf. point précédent).
 
 ## Décisions verrouillées — NE PAS rediscuter
 
