@@ -8,7 +8,7 @@ local addonName, ns = ...
 local Elements = {}
 ns.Elements = Elements
 
-local INSET = 1
+local INSET = 0   -- 0 = pas de contour (barres bord a bord) ; >0 = liseré sombre
 
 -- ----------------------------------------------------------------------------
 --  Detection de l'API d'auras (MoP 5.5.4) avec repli
@@ -53,6 +53,16 @@ local function AdjustColor(r, g, b)
         b = lum + (b - lum) * sat
     end
     return r * bri, g * bri, b * bri
+end
+
+-- Paire de couleurs {left={r,g,b}, right={r,g,b}} choisie a la main pour un
+-- joueur de classe connue (table ns.classBarColors), ou nil. Pas de gate de style.
+function Elements.GetClassColors(unit, cfg)
+    if cfg and cfg.classColor == false then return nil end
+    if not ns.classBarColors then return nil end
+    if not UnitIsPlayer(unit) then return nil end
+    local _, class = UnitClass(unit)
+    return class and ns.classBarColors[class] or nil
 end
 
 function Elements.GetUnitColor(unit, cfg)
@@ -117,7 +127,7 @@ local function CreateBar(parent)
     local bg = bar:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetTexture(ns.media.statusbar)
-    bg:SetVertexColor(0.15, 0.15, 0.15, 0.9)
+    bg:SetVertexColor(0, 0, 0, 0.15)
     bar.bg = bg
     return bar
 end
@@ -159,7 +169,7 @@ function Elements.BuildVisuals(frame)
     local bg = frame:CreateTexture(nil, "BACKGROUND")
     bg:SetPoint("TOPLEFT", -INSET, INSET)
     bg:SetPoint("BOTTOMRIGHT", INSET, -INSET)
-    bg:SetColorTexture(0, 0, 0, 0.85)
+    bg:SetColorTexture(0, 0, 0, 0.15)
     frame.bg = bg
 
     local powerH = 0
@@ -222,7 +232,7 @@ function Elements.CreateAuras(frame)
     if max <= 0 then return end
     local size = cfg.auraSize or 18
     local mirror = cfg.mirror
-    local below = frame   -- ancre des buffs sous le cadre
+    local below = frame.castBar or frame   -- buffs sous la barre de cast si presente
 
     if cfg.showBuffs then
         frame.buffIcons = {}
@@ -256,6 +266,136 @@ function Elements.CreateAuras(frame)
 end
 
 -- ----------------------------------------------------------------------------
+--  Barre de cast (player / target)
+-- ----------------------------------------------------------------------------
+local CAST_EVENTS = {
+    "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_FAILED",
+    "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_DELAYED",
+    "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_CHANNEL_STOP", "UNIT_SPELLCAST_CHANNEL_UPDATE",
+    "UNIT_SPELLCAST_INTERRUPTIBLE", "UNIT_SPELLCAST_NOT_INTERRUPTIBLE",
+}
+
+local function CastBar_Reset(cb)
+    cb.casting, cb.channeling = nil, nil
+    cb:Hide()
+end
+
+local function CastBar_Color(cb)
+    if cb.notInterruptible then
+        cb:SetStatusBarColor(0.6, 0.6, 0.6)
+    else
+        cb:SetStatusBarColor(0.2, 0.5, 1.0)
+    end
+end
+
+function Elements.CastBarCheck(frame)
+    local cb = frame.castBar
+    if not cb then return end
+    local unit = frame.unit
+    if not unit or not UnitExists(unit) then CastBar_Reset(cb); return end
+
+    local name, _, texture, startMS, endMS, _, _, notInterruptible = UnitCastingInfo(unit)
+    local channel = false
+    if not name then
+        name, _, texture, startMS, endMS, _, notInterruptible = UnitChannelInfo(unit)
+        channel = true
+    end
+    if not name or not startMS or not endMS then CastBar_Reset(cb); return end
+
+    cb.startTime = startMS / 1000
+    cb.endTime   = endMS / 1000
+    cb.casting     = not channel
+    cb.channeling  = channel
+    cb.notInterruptible = notInterruptible
+    cb:SetMinMaxValues(0, cb.endTime - cb.startTime)
+    cb:SetValue(channel and (cb.endTime - cb.startTime) or 0)
+    cb.icon:SetTexture(texture)
+    cb.text:SetText(name)
+    CastBar_Color(cb)
+    cb:Show()
+end
+
+local function CastBar_OnUpdate(self)
+    local t = GetTime()
+    if self.casting then
+        if t >= self.endTime then CastBar_Reset(self); return end
+        self:SetValue(t - self.startTime)
+    elseif self.channeling then
+        if t >= self.endTime then CastBar_Reset(self); return end
+        self:SetValue(self.endTime - t)
+    end
+end
+
+local function CastBar_OnEvent(self, event, arg1)
+    local frame = self.owner
+    if event == "PLAYER_TARGET_CHANGED" then
+        Elements.CastBarCheck(frame)
+        return
+    end
+    if arg1 ~= frame.unit then return end
+    if event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_CHANNEL_START"
+        or event == "UNIT_SPELLCAST_DELAYED" or event == "UNIT_SPELLCAST_CHANNEL_UPDATE" then
+        Elements.CastBarCheck(frame)
+    elseif event == "UNIT_SPELLCAST_INTERRUPTIBLE" then
+        self.notInterruptible = false
+        CastBar_Color(self)
+    elseif event == "UNIT_SPELLCAST_NOT_INTERRUPTIBLE" then
+        self.notInterruptible = true
+        CastBar_Color(self)
+    else
+        CastBar_Reset(self)
+    end
+end
+
+function Elements.CreateCastBar(frame)
+    local cfg = frame.config
+    local mirror = cfg.mirror
+    local height = cfg.castHeight or 16
+
+    local cb = CreateFrame("StatusBar", nil, frame)
+    cb:SetStatusBarTexture(BarTexture())
+    cb:SetHeight(height)
+    cb:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -3)
+    cb:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT", 0, -3)
+    if mirror and cb.SetReverseFill then cb:SetReverseFill(true) end
+
+    local bg = cb:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0, 0, 0, 0.15)
+
+    local icon = cb:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(height, height)
+    icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    if mirror then
+        icon:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+    else
+        icon:SetPoint("RIGHT", cb, "LEFT", -2, 0)
+    end
+    cb.icon = icon
+
+    local text = cb:CreateFontString(nil, "OVERLAY")
+    text:SetFont(ns.media.font, cfg.fontSize or 11, "OUTLINE")
+    text:SetPoint("LEFT", cb, "LEFT", 3, 0)
+    text:SetPoint("RIGHT", cb, "RIGHT", -3, 0)
+    text:SetJustifyH(mirror and "RIGHT" or "LEFT")
+    text:SetWordWrap(false)
+    cb.text = text
+
+    cb.owner = frame
+    cb:Hide()
+    cb:SetScript("OnUpdate", CastBar_OnUpdate)
+    cb:SetScript("OnEvent", CastBar_OnEvent)
+    for _, ev in ipairs(CAST_EVENTS) do cb:RegisterEvent(ev) end
+    if frame.unit == "target" then
+        cb:RegisterEvent("PLAYER_TARGET_CHANGED")
+    end
+
+    frame.castBar = cb
+    Elements.CastBarCheck(frame)
+    return cb
+end
+
+-- ----------------------------------------------------------------------------
 --  Mises a jour
 -- ----------------------------------------------------------------------------
 function Elements.UpdateHealth(frame)
@@ -265,7 +405,16 @@ function Elements.UpdateHealth(frame)
     local bar = frame.health
     bar:SetMinMaxValues(0, max > 0 and max or 1)
     bar:SetValue(cur)
-    SetBarColor(bar, Elements.GetUnitColor(unit, frame.config))
+    local cc = Elements.GetClassColors(unit, frame.config)
+    if cc then
+        if ns.config.classGradient ~= false then
+            PaintBar(bar, cc.left[1], cc.left[2], cc.left[3], cc.right[1], cc.right[2], cc.right[3])
+        else
+            PaintBar(bar, cc.right[1], cc.right[2], cc.right[3], cc.right[1], cc.right[2], cc.right[3])
+        end
+    else
+        SetBarColor(bar, Elements.GetUnitColor(unit, frame.config))
+    end
 
     if frame.healthText then
         local cfg = frame.config
@@ -320,8 +469,24 @@ function Elements.UpdateName(frame)
         end
     end
     frame.nameText:SetText(prefix .. nameStr)
-    frame.nameText:SetTextColor(Elements.GetUnitColor(unit, cfg))
+    local cc = Elements.GetClassColors(unit, cfg)
+    if cc then
+        frame.nameText:SetTextColor(cc.right[1], cc.right[2], cc.right[3])
+    else
+        frame.nameText:SetTextColor(Elements.GetUnitColor(unit, cfg))
+    end
 end
+
+-- Couleurs de bordure des debuffs par type (auto-suffisant : le global
+-- DebuffTypeColor n'existe pas sur ce client). dispelName vaut "Magic" /
+-- "Curse" / "Disease" / "Poison", ou nil.
+local DEBUFF_COLORS = {
+    Magic   = { r = 0.20, g = 0.60, b = 1.00 },
+    Curse   = { r = 0.60, g = 0.00, b = 1.00 },
+    Disease = { r = 0.60, g = 0.40, b = 0.00 },
+    Poison  = { r = 0.00, g = 0.60, b = 0.00 },
+    none    = { r = 0.80, g = 0.00, b = 0.00 },
+}
 
 local function FillAuras(icons, unit, filter, isDebuff)
     for i = 1, #icons do
@@ -341,7 +506,7 @@ local function FillAuras(icons, unit, filter, isDebuff)
                 btn.cd:Hide()
             end
             if isDebuff then
-                local c = (dispelType and DebuffTypeColor[dispelType]) or DebuffTypeColor.none
+                local c = DEBUFF_COLORS[dispelType or "none"] or DEBUFF_COLORS.none
                 btn.bd:SetColorTexture(c.r, c.g, c.b, 1)
             end
             btn:Show()
@@ -365,6 +530,7 @@ function Elements.FullUpdate(frame)
     Elements.UpdatePower(frame)
     Elements.UpdateName(frame)
     Elements.UpdateAuras(frame)
+    if frame.castBar then Elements.CastBarCheck(frame) end
 end
 
 -- ----------------------------------------------------------------------------

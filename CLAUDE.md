@@ -21,8 +21,19 @@ buffs/debuffs.
 ## Sources de vérité
 
 - **Plan approuvé** (fait foi pour tous les détails) : `C:\Users\Louis\.claude\plans\tidy-conjuring-salamander.md`
-- **Prompt directeur** : `init-prompt.md` (à la racine du dossier)
 - En cas de doute sur un détail, relire le plan **avant** de coder.
+
+## Workflow Git — IMPORTANT
+
+- **Ne JAMAIS pousser sur `main` ni `develop`** (ni y committer directement).
+  Ces branches sont réservées ; toute modification passe **systématiquement par
+  une Pull Request**.
+- Cycle : créer une **branche dédiée** (`feature/…`, `fix/…`, `docs/…`) →
+  committer dessus → pousser **la branche** → ouvrir une **PR** (cible `develop`
+  par défaut).
+- **Ne JAMAIS valider / merger / fermer une PR de ma propre initiative** : c'est
+  **toujours l'utilisateur** qui revoit et merge — **sauf s'il le demande
+  explicitement**. Par défaut, mon rôle s'arrête à ouvrir et mettre à jour la PR.
 
 ## Décisions verrouillées — NE PAS rediscuter
 
@@ -30,8 +41,11 @@ buffs/debuffs.
   (pas d'Ace3, pas d'oUF, pas de LibStub). Partage d'état entre fichiers via
   `local addonName, ns = ...` (la table `ns`), pas de globaux superflus.
 - **Frames Blizzard masquées/remplacées** par défaut.
-- **Pas de fenêtre d'options** (ou extrêmement simple). Réglages dans une **table
-  Lua éditable** (`Config.lua`) + déplacement des frames à la souris via slash.
+- **Config principalement via table Lua éditable** (`Config.lua`) + déplacement
+  des frames à la souris via slash. Une **petite fenêtre d'options** existe
+  (`Options.lua`, `/mf config`) limitée aux **couleurs par classe** (sélecteur
+  Blizzard, sauvegarde `MarcelFramerDB`, aperçu live `ns:RefreshAll()`). Garder
+  toute UI d'options minimale et optionnelle.
 - **Nom de l'addon : `MarcelFramer`** (nom verrouillé ; le plan/prompt d'origine
   parlait de « MesFrames », un placeholder désormais abandonné). Slash
   `/marcelframer` et `/mf`, `## SavedVariables: MarcelFramerDB`.
@@ -47,6 +61,7 @@ Core.lua           Init (PLAYER_LOGIN), SavedVariables, masquage Blizzard, slash
 Elements.lua       Briques réutilisables : barre de vie, barre de ressource, textes, couleur, auras
 UnitFrame.lua      Frames simples : player / target / targettarget / pet
 GroupFrames.lua    party + raid via SecureGroupHeaderTemplate
+Options.lua        Fenêtre /mf config : couleurs par classe (ColorPickerFrame)
 ```
 
 ## Conventions par fichier
