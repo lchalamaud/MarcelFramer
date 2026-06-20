@@ -30,8 +30,11 @@ buffs/debuffs.
   (pas d'Ace3, pas d'oUF, pas de LibStub). Partage d'état entre fichiers via
   `local addonName, ns = ...` (la table `ns`), pas de globaux superflus.
 - **Frames Blizzard masquées/remplacées** par défaut.
-- **Pas de fenêtre d'options** (ou extrêmement simple). Réglages dans une **table
-  Lua éditable** (`Config.lua`) + déplacement des frames à la souris via slash.
+- **Config principalement via table Lua éditable** (`Config.lua`) + déplacement
+  des frames à la souris via slash. Une **petite fenêtre d'options** existe
+  (`Options.lua`, `/mf config`) limitée aux **couleurs par classe** (sélecteur
+  Blizzard, sauvegarde `MarcelFramerDB`, aperçu live `ns:RefreshAll()`). Garder
+  toute UI d'options minimale et optionnelle.
 - **Nom de l'addon : `MarcelFramer`** (nom verrouillé ; le plan/prompt d'origine
   parlait de « MesFrames », un placeholder désormais abandonné). Slash
   `/marcelframer` et `/mf`, `## SavedVariables: MarcelFramerDB`.
@@ -47,6 +50,7 @@ Core.lua           Init (PLAYER_LOGIN), SavedVariables, masquage Blizzard, slash
 Elements.lua       Briques réutilisables : barre de vie, barre de ressource, textes, couleur, auras
 UnitFrame.lua      Frames simples : player / target / targettarget / pet
 GroupFrames.lua    party + raid via SecureGroupHeaderTemplate
+Options.lua        Fenêtre /mf config : couleurs par classe (ColorPickerFrame)
 ```
 
 ## Conventions par fichier

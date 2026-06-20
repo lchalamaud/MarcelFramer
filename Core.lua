@@ -209,6 +209,42 @@ function ns:HideBlizzard()
 end
 
 -- ----------------------------------------------------------------------------
+--  Couleurs sauvegardees (DB -> runtime) + rafraichissement live
+-- ----------------------------------------------------------------------------
+function ns:ApplySavedColors()
+    local db = MarcelFramerDB
+    if db.barStyle then ns.config.barStyle = db.barStyle end
+    if db.classGradient ~= nil then ns.config.classGradient = db.classGradient end
+    if db.classBarColors then
+        for class, sides in pairs(db.classBarColors) do
+            local entry = ns.classBarColors[class] or {}
+            if sides.left then entry.left = { sides.left[1], sides.left[2], sides.left[3] } end
+            if sides.right then entry.right = { sides.right[1], sides.right[2], sides.right[3] } end
+            ns.classBarColors[class] = entry
+        end
+    end
+end
+
+-- Re-applique couleurs de vie + nom sur toutes les frames (apercu live des reglages)
+function ns:RefreshAll()
+    local E = ns.Elements
+    for _, data in pairs(ns.registry) do
+        local frame = data.frame
+        if data.isHeader then
+            for _, child in ipairs({ frame:GetChildren() }) do
+                if child.health then
+                    E.UpdateHealth(child)
+                    E.UpdateName(child)
+                end
+            end
+        elseif frame.health then
+            E.UpdateHealth(frame)
+            E.UpdateName(frame)
+        end
+    end
+end
+
+-- ----------------------------------------------------------------------------
 --  Commandes slash
 -- ----------------------------------------------------------------------------
 SLASH_MARCELFRAMER1 = "/marcelframer"
@@ -221,8 +257,10 @@ SlashCmdList["MARCELFRAMER"] = function(msg)
         ns:Lock()
     elseif msg == "reset" then
         ns:Reset()
+    elseif msg == "config" or msg == "colors" or msg == "couleurs" then
+        if ns.Options and ns.Options.Toggle then ns.Options.Toggle() end
     else
-        MF_Print("commandes : |cffffff00/mf unlock|r, |cffffff00/mf lock|r, |cffffff00/mf reset|r")
+        MF_Print("commandes : |cffffff00/mf config|r (couleurs), |cffffff00/mf unlock|r, |cffffff00/mf lock|r, |cffffff00/mf reset|r")
     end
 end
 
@@ -237,6 +275,8 @@ f:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_LOGIN" then
         MarcelFramerDB = MarcelFramerDB or {}
         MarcelFramerDB.positions = MarcelFramerDB.positions or {}
+        MarcelFramerDB.classBarColors = MarcelFramerDB.classBarColors or {}
+        ns:ApplySavedColors()
         ns:HideBlizzard()
         if ns.UnitFrame and ns.UnitFrame.CreateAll then ns.UnitFrame.CreateAll() end
         if ns.GroupFrames and ns.GroupFrames.CreateAll then ns.GroupFrames.CreateAll() end
