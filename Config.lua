@@ -69,7 +69,7 @@ ns.config = {
     player = {
         enabled       = true,
         width         = 190, height = 45, scale = 1,
-        point         = { point = "CENTER", relPoint = "CENTER", x = -300, y = -160 },
+        point         = { point = "CENTER", relPoint = "CENTER", x = -213, y = -127 },
         powerRatio    = 0.26,
         classColor    = true,              -- true = couleur de classe / reaction ; sinon color = {r,g,b}
         -- color      = { 0.2, 0.6, 0.2 },
@@ -99,7 +99,7 @@ ns.config = {
     target = {
         enabled       = true,
         width         = 190, height = 45, scale = 1,
-        point         = { point = "CENTER", relPoint = "CENTER", x = 300, y = -160 },
+        point         = { point = "CENTER", relPoint = "CENTER", x = 213, y = -127 },
         powerRatio    = 0.26,
         classColor    = true,
         mirror        = true,              -- cadre en miroir du joueur
@@ -123,7 +123,7 @@ ns.config = {
     targettarget = {
         enabled    = true,
         width      = 100, height = 20, scale = 1,
-        point      = { point = "CENTER", relPoint = "CENTER", x = 300, y = -235 },
+        point      = { point = "RIGHT", relPoint = "RIGHT", x = -350, y = -140 },
         classColor = true,
         showPower  = false,
         showName   = true,
@@ -137,7 +137,7 @@ ns.config = {
     pet = {
         enabled    = true,
         width      = 125, height = 25, scale = 1,
-        point      = { point = "CENTER", relPoint = "CENTER", x = -300, y = -235 },
+        point      = { point = "LEFT", relPoint = "LEFT", x = 339, y = -188 },
         powerRatio = 0.30,
         classColor = false, color = { 0.45, 0.55, 0.75 },
         showPower  = true,

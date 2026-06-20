@@ -10,7 +10,8 @@ ns.noop = noop
 ns.registry = {}   -- key -> { frame = <frame> }
 ns.movers   = {}   -- key -> mover overlay frame
 ns.unlocked = false
-ns.pendingSizes = {}   -- key -> true : tailles a appliquer a la sortie de combat
+ns.pendingSizes = {}       -- key -> true : tailles a appliquer a la sortie de combat
+ns.pendingPositions = {}   -- key -> true : positions a appliquer a la sortie de combat
 
 -- Tailles par defaut (Config.lua), capturees avant toute fusion DB (pour /reset)
 ns.sizeDefaults = {}
@@ -41,6 +42,40 @@ function ns:ApplyPosition(frame, key)
     if not p then return end
     frame:ClearAllPoints()
     frame:SetPoint(p.point, UIParent, p.relPoint or p.point, p.x or 0, p.y or 0)
+end
+
+-- Synchronise le mover d'un cadre sur sa position courante (cadre non securise).
+local function SyncMover(key)
+    local mover = ns.movers[key]
+    if not mover then return end
+    local p = ns:GetPosition(key)
+    if not p then return end
+    mover:ClearAllPoints()
+    mover:SetPoint(p.point, UIParent, p.relPoint or p.point, p.x or 0, p.y or 0)
+end
+
+-- Applique a chaud la position d'un cadre (+ son mover) depuis la DB/config.
+-- Differe en combat : SetPoint est protege sur un cadre securise pendant le
+-- lockdown (rejoue a PLAYER_REGEN_ENABLED).
+function ns:ApplyPositionByKey(key)
+    local data = ns.registry[key]
+    if not data then return false end
+    if InCombatLockdown() then
+        ns.pendingPositions[key] = true
+        return false
+    end
+    ns:ApplyPosition(data.frame, key)
+    SyncMover(key)
+    return true
+end
+
+-- Ecrit X/Y dans la DB (en conservant l'ancrage courant) puis applique.
+function ns:SavePosition(key, x, y)
+    local cur = ns:GetPosition(key) or {}
+    local point    = cur.point or "CENTER"
+    local relPoint = cur.relPoint or point
+    MarcelFramerDB.positions[key] = { point = point, relPoint = relPoint, x = x, y = y }
+    ns:ApplyPositionByKey(key)
 end
 
 -- ----------------------------------------------------------------------------
@@ -295,6 +330,13 @@ f:SetScript("OnEvent", function(self, event)
             for k in pairs(ns.pendingSizes) do keys[#keys + 1] = k end
             wipe(ns.pendingSizes)
             for _, k in ipairs(keys) do ns:ApplySize(k) end
+        end
+        -- Idem pour les positions mises en attente
+        if next(ns.pendingPositions) then
+            local keys = {}
+            for k in pairs(ns.pendingPositions) do keys[#keys + 1] = k end
+            wipe(ns.pendingPositions)
+            for _, k in ipairs(keys) do ns:ApplyPositionByKey(k) end
         end
     end
 end)
