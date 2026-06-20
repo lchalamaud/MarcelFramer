@@ -15,6 +15,24 @@ ns.media = {
     font      = STANDARD_TEXT_FONT,
 }
 
+-- Degrade explicite par classe pour la barre de vie des JOUEURS (r,g,b en 0-1).
+-- Utilise quand barStyle == "gradient" et classColor ~= false ; left = bord fonce
+-- (0%), right = bord clair (100%). Mettre a nil pour revenir au degrade derive.
+-- Ces valeurs sont prises telles quelles (pas d'adoucissement colorAdjust).
+ns.classBarColors = {
+    WARRIOR     = { left = {0.569, 0.412, 0.251}, right = {0.780, 0.569, 0.329} },
+    PALADIN     = { left = {0.725, 0.294, 0.412}, right = {0.941, 0.596, 0.706} },
+    DEATHKNIGHT = { left = {0.431, 0.055, 0.118}, right = {0.769, 0.118, 0.227} },
+    MONK        = { left = {0.000, 0.431, 0.314}, right = {0.000, 0.725, 0.549} },
+    PRIEST      = { left = {0.580, 0.580, 0.647}, right = {0.863, 0.863, 0.910} },
+    DRUID       = { left = {0.647, 0.282, 0.000}, right = {1.000, 0.549, 0.078} },
+    SHAMAN      = { left = {0.000, 0.216, 0.549}, right = {0.000, 0.439, 0.871} },
+    MAGE        = { left = {0.078, 0.510, 0.627}, right = {0.247, 0.780, 0.922} },
+    WARLOCK     = { left = {0.267, 0.267, 0.667}, right = {0.529, 0.533, 0.933} },
+    HUNTER      = { left = {0.314, 0.510, 0.118}, right = {0.667, 0.827, 0.447} },
+    ROGUE       = { left = {0.627, 0.580, 0.000}, right = {1.000, 0.957, 0.408} },
+}
+
 -- Comportement global
 ns.config = {
     -- Masquage des cadres Blizzard par defaut
@@ -28,6 +46,11 @@ ns.config = {
     -- Style des barres de ressource / cast / PNJ : "gradient" (degrade derive),
     -- "flat" (aplat uni) ou "blizzard" (texture brillante d'origine).
     barStyle = "gradient",
+
+    -- Barres de vie des joueurs : true = degrade 2 teintes (left->right de
+    -- ns.classBarColors) ; false = couleur unie (la teinte "right"). Reglable
+    -- aussi via la fenetre /mf config.
+    classGradient = true,
 
     -- Reglage du degrade (style linear-gradient, derive de la couleur de classe).
     -- dark/light = facteurs de LUMINOSITE (on reste dans la teinte, pas de blanc) :

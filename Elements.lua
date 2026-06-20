@@ -55,6 +55,16 @@ local function AdjustColor(r, g, b)
     return r * bri, g * bri, b * bri
 end
 
+-- Paire de couleurs {left={r,g,b}, right={r,g,b}} choisie a la main pour un
+-- joueur de classe connue (table ns.classBarColors), ou nil. Pas de gate de style.
+function Elements.GetClassColors(unit, cfg)
+    if cfg and cfg.classColor == false then return nil end
+    if not ns.classBarColors then return nil end
+    if not UnitIsPlayer(unit) then return nil end
+    local _, class = UnitClass(unit)
+    return class and ns.classBarColors[class] or nil
+end
+
 function Elements.GetUnitColor(unit, cfg)
     -- Couleur personnalisee explicite : on la respecte telle quelle
     if cfg and cfg.classColor == false and cfg.color then
@@ -395,7 +405,16 @@ function Elements.UpdateHealth(frame)
     local bar = frame.health
     bar:SetMinMaxValues(0, max > 0 and max or 1)
     bar:SetValue(cur)
-    SetBarColor(bar, Elements.GetUnitColor(unit, frame.config))
+    local cc = Elements.GetClassColors(unit, frame.config)
+    if cc then
+        if ns.config.classGradient ~= false then
+            PaintBar(bar, cc.left[1], cc.left[2], cc.left[3], cc.right[1], cc.right[2], cc.right[3])
+        else
+            PaintBar(bar, cc.right[1], cc.right[2], cc.right[3], cc.right[1], cc.right[2], cc.right[3])
+        end
+    else
+        SetBarColor(bar, Elements.GetUnitColor(unit, frame.config))
+    end
 
     if frame.healthText then
         local cfg = frame.config
@@ -450,7 +469,12 @@ function Elements.UpdateName(frame)
         end
     end
     frame.nameText:SetText(prefix .. nameStr)
-    frame.nameText:SetTextColor(Elements.GetUnitColor(unit, cfg))
+    local cc = Elements.GetClassColors(unit, cfg)
+    if cc then
+        frame.nameText:SetTextColor(cc.right[1], cc.right[2], cc.right[3])
+    else
+        frame.nameText:SetTextColor(Elements.GetUnitColor(unit, cfg))
+    end
 end
 
 local function FillAuras(icons, unit, filter, isDebuff)
