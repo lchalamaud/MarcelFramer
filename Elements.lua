@@ -8,7 +8,7 @@ local addonName, ns = ...
 local Elements = {}
 ns.Elements = Elements
 
-local INSET = 1
+local INSET = 0   -- 0 = pas de contour (barres bord a bord) ; >0 = liseré sombre
 
 -- ----------------------------------------------------------------------------
 --  Detection de l'API d'auras (MoP 5.5.4) avec repli
