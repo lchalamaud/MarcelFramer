@@ -24,9 +24,12 @@ for class, sides in pairs(ns.classBarColors or {}) do
 end
 
 local frame
+local lockBtn         -- bouton bascule verrouiller/deverrouiller les cadres
 local swatches = {}   -- class -> { left, right, leftHex, rightHex, label }
 
--- Section "Tailles des cadres" : cadre selectionne + sliders
+-- Section "Tailles des cadres" : cadre selectionne + sliders + position (X/Y).
+-- Le meme selecteur de cadre (grille 2x2) pilote les sliders de taille ET les
+-- champs de position.
 -- Ordre = disposition de la grille 2x2 (ligne du haut puis ligne du bas).
 -- Bas : Familier a gauche (sous le joueur), Cible-cible a droite (sous la cible).
 local SIZE_KEYS = {
@@ -183,6 +186,60 @@ local function refreshSizeSliders()
     for key, btn in pairs(sizeState.selButtons) do
         if key == sizeState.currentKey then btn:LockHighlight() else btn:UnlockHighlight() end
     end
+    -- Champs de position X/Y (depuis la position courante du cadre)
+    if sizeState.posX then
+        local p = ns:GetPosition(sizeState.currentKey)
+        local px = p and (p.x or 0) or 0
+        local py = p and (p.y or 0) or 0
+        if not sizeState.posX:HasFocus() then sizeState.posX:SetText(tostring(math.floor(px + 0.5))) end
+        if not sizeState.posY:HasFocus() then sizeState.posY:SetText(tostring(math.floor(py + 0.5))) end
+    end
+end
+
+-- Lit les deux champs X/Y et enregistre la position du cadre selectionne.
+local function commitPos()
+    local key = sizeState.currentKey
+    local x = tonumber(((sizeState.posX:GetText() or ""):gsub(",", ".")))
+    local y = tonumber(((sizeState.posY:GetText() or ""):gsub(",", ".")))
+    if x and y then
+        ns:SavePosition(key, math.floor(x + 0.5), math.floor(y + 0.5))
+    end
+    refreshSizeSliders()   -- restaure l'affichage (valide ou non)
+end
+
+-- Champ numerique de coordonnee (X ou Y), repris du style hexa.
+local function makePosBox(parent)
+    local e = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
+    e:SetSize(56, 18)
+    e:SetAutoFocus(false)
+    e:SetNumeric(false)            -- on tolere le signe '-' (et la virgule)
+    e:SetMaxLetters(6)
+    e:SetFontObject("GameFontHighlightSmall")
+    e:SetScript("OnEnterPressed", function(self) commitPos(); self:ClearFocus() end)
+    e:SetScript("OnEditFocusLost", commitPos)
+    e:SetScript("OnEscapePressed", function(self) refreshSizeSliders(); self:ClearFocus() end)
+    return e
+end
+
+-- Change le cadre en cours de parametrage. On retire d'abord le focus des
+-- champs X/Y : ClearFocus declenche OnEditFocusLost -> commitPos pendant que
+-- currentKey designe encore l'ANCIEN cadre, donc l'edition en cours est validee
+-- sur le bon cadre avant la bascule (sinon elle ecraserait le nouveau).
+local function selectSizeKey(key)
+    if sizeState.posX then sizeState.posX:ClearFocus() end
+    if sizeState.posY then sizeState.posY:ClearFocus() end
+    sizeState.currentKey = key
+    refreshSizeSliders()
+end
+
+-- Reflete l'etat verrouille/deverrouille sur le bouton bascule.
+local function updateLockButton()
+    if not lockBtn then return end
+    if ns.unlocked then
+        lockBtn:SetText("Verrouiller les cadres")
+    else
+        lockBtn:SetText("Deplacer les cadres")
+    end
 end
 
 local function makeSizeSlider(parent, name, info)
@@ -220,7 +277,7 @@ end
 
 local function build()
     frame = CreateFrame("Frame", "MarcelFramerOptions", UIParent, "BackdropTemplate")
-    frame:SetSize(700, 426)
+    frame:SetSize(700, 470)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
     frame:SetBackdrop({
@@ -315,8 +372,7 @@ local function build()
         b:SetPoint("TOPLEFT", RX + col * 118, -70 - row * 26)
         b:SetText(e.label)
         b:SetScript("OnClick", function()
-            sizeState.currentKey = e.key
-            refreshSizeSliders()
+            selectSizeKey(e.key)
         end)
         sizeState.selButtons[e.key] = b
     end
@@ -329,9 +385,38 @@ local function build()
         sizeState.sliders[i] = s
     end
 
+    -- Position du cadre (coordonnees X / Y par rapport a l'ancrage courant)
+    local posTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    posTitle:SetPoint("TOPLEFT", RX, -304)
+    posTitle:SetText("Position")
+
+    local xLbl = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    xLbl:SetPoint("TOPLEFT", RX + 8, -326)
+    xLbl:SetText("X :")
+    sizeState.posX = makePosBox(frame)
+    sizeState.posX:SetPoint("LEFT", xLbl, "RIGHT", 6, 0)
+
+    local yLbl = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    yLbl:SetPoint("LEFT", sizeState.posX, "RIGHT", 16, 0)
+    yLbl:SetText("Y :")
+    sizeState.posY = makePosBox(frame)
+    sizeState.posY:SetPoint("LEFT", yLbl, "RIGHT", 6, 0)
+
+    -- Bouton bascule : deverrouiller pour deplacer les cadres a la souris
+    lockBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    lockBtn:SetSize(160, 22)
+    lockBtn:SetPoint("TOPLEFT", RX + 8, -350)
+    lockBtn:SetScript("OnClick", function()
+        if ns.unlocked then ns:Lock() else ns:Unlock() end
+        updateLockButton()
+        refreshSizeSliders()   -- les positions ont pu bouger
+    end)
+
     local note = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    note:SetPoint("TOPLEFT", RX, -300)
-    note:SetText("Ajuste hors combat (differe pendant le combat).")
+    note:SetPoint("TOPLEFT", RX, -382)
+    note:SetWidth(236)
+    note:SetJustifyH("LEFT")
+    note:SetText("Ajuste hors combat (differe pendant le combat). |cffffff00/mf reset|r remet les positions par defaut.")
 
     local resetSize = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     resetSize:SetSize(150, 22)
@@ -344,6 +429,7 @@ local function build()
 
     refreshSwatches()
     refreshSizeSliders()
+    updateLockButton()
 end
 
 function ns.Options.Toggle()
@@ -353,6 +439,7 @@ function ns.Options.Toggle()
     else
         refreshSwatches()
         refreshSizeSliders()
+        updateLockButton()
         frame:Show()
     end
 end
