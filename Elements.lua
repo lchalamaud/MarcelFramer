@@ -477,6 +477,17 @@ function Elements.UpdateName(frame)
     end
 end
 
+-- Couleurs de bordure des debuffs par type (auto-suffisant : le global
+-- DebuffTypeColor n'existe pas sur ce client). dispelName vaut "Magic" /
+-- "Curse" / "Disease" / "Poison", ou nil.
+local DEBUFF_COLORS = {
+    Magic   = { r = 0.20, g = 0.60, b = 1.00 },
+    Curse   = { r = 0.60, g = 0.00, b = 1.00 },
+    Disease = { r = 0.60, g = 0.40, b = 0.00 },
+    Poison  = { r = 0.00, g = 0.60, b = 0.00 },
+    none    = { r = 0.80, g = 0.00, b = 0.00 },
+}
+
 local function FillAuras(icons, unit, filter, isDebuff)
     for i = 1, #icons do
         local btn = icons[i]
@@ -495,7 +506,7 @@ local function FillAuras(icons, unit, filter, isDebuff)
                 btn.cd:Hide()
             end
             if isDebuff then
-                local c = (dispelType and DebuffTypeColor[dispelType]) or DebuffTypeColor.none
+                local c = DEBUFF_COLORS[dispelType or "none"] or DEBUFF_COLORS.none
                 btn.bd:SetColorTexture(c.r, c.g, c.b, 1)
             end
             btn:Show()
