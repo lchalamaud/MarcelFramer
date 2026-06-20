@@ -100,6 +100,20 @@ end
 -- ----------------------------------------------------------------------------
 --  Briques reutilisables : pastille + champ hexa (lies par get/apply/restore)
 -- ----------------------------------------------------------------------------
+-- Retire le focus de tous les champs hexa (classes + couleurs unies). A appeler
+-- avant d'ouvrir un ColorPicker : sinon le champ encore focus re-committe son
+-- ancienne valeur (via OnEditFocusLost) par-dessus la couleur choisie au picker.
+-- Meme logique que pour les champs X/Y des positions de cadre.
+local function clearColorFocus()
+    for _, row in pairs(swatches) do
+        if row.leftHex  then row.leftHex:ClearFocus()  end
+        if row.rightHex then row.rightHex:ClearFocus() end
+    end
+    for _, row in ipairs(singleRows) do
+        if row.hex then row.hex:ClearFocus() end
+    end
+end
+
 -- Pastille cliquable (bordure + aplat). get() -> r,g,b ; apply(r,g,b).
 local function createSwatch(parent, get, apply)
     local b = CreateFrame("Button", nil, parent)
@@ -114,6 +128,7 @@ local function createSwatch(parent, get, apply)
     b:SetScript("OnEnter", function(s) s:SetAlpha(0.8) end)
     b:SetScript("OnLeave", function(s) s:SetAlpha(1) end)
     b:SetScript("OnClick", function()
+        clearColorFocus()          -- valide/abandonne toute saisie hexa en cours
         local r, g, b2 = get()
         if not r then return end
         openPicker(r, g, b2, apply)
