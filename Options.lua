@@ -539,14 +539,11 @@ local function showTab(idx)
     end
 end
 
-local function makeTabButton(text, idx, anchorTo)
+-- Bouton de la barre latérale gauche (menu vertical, extensible)
+local function makeMenuButton(text, idx)
     local b = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    b:SetSize(150, 22)
-    if anchorTo then
-        b:SetPoint("LEFT", anchorTo, "RIGHT", 6, 0)
-    else
-        b:SetPoint("TOPLEFT", 14, -40)
-    end
+    b:SetSize(134, 24)
+    b:SetPoint("TOPLEFT", 12, -44 - (idx - 1) * 28)
     b:SetText(text)
     b:SetScript("OnClick", function() showTab(idx) end)
     tabButtons[idx] = b
@@ -555,7 +552,7 @@ end
 
 local function makePanel()
     local p = CreateFrame("Frame", nil, frame)
-    p:SetPoint("TOPLEFT", 12, -72)
+    p:SetPoint("TOPLEFT", 162, -44)
     p:SetPoint("BOTTOMRIGHT", -12, 12)
     panels[#panels + 1] = p
     return p
@@ -563,7 +560,7 @@ end
 
 local function build()
     frame = CreateFrame("Frame", "MarcelFramerOptions", UIParent, "BackdropTemplate")
-    frame:SetSize(470, 480)
+    frame:SetSize(580, 480)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
     frame:SetBackdrop({
@@ -586,10 +583,16 @@ local function build()
     local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", -4, -4)
 
-    -- Boutons d'onglets
-    local t1 = makeTabButton("Classes", 1)
-    local t2 = makeTabButton("Ressources & PNJ", 2, t1)
-    makeTabButton("Cadres", 3, t2)
+    -- Barre latérale gauche : menu vertical (séparé du contenu par un trait)
+    makeMenuButton("Classes", 1)
+    makeMenuButton("Ressources & PNJ", 2)
+    makeMenuButton("Cadres", 3)
+
+    local divider = frame:CreateTexture(nil, "ARTWORK")
+    divider:SetColorTexture(1, 1, 1, 0.12)
+    divider:SetWidth(1)
+    divider:SetPoint("TOPLEFT", 152, -40)
+    divider:SetPoint("BOTTOMLEFT", 152, 12)
 
     -- Panneaux (un par onglet, dans l'ordre des index)
     buildClassPanel(makePanel())
