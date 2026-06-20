@@ -127,7 +127,7 @@ local function CreateBar(parent)
     local bg = bar:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetTexture(ns.media.statusbar)
-    bg:SetVertexColor(0.15, 0.15, 0.15, 0.9)
+    bg:SetVertexColor(0, 0, 0, 0.15)
     bar.bg = bg
     return bar
 end
@@ -169,7 +169,7 @@ function Elements.BuildVisuals(frame)
     local bg = frame:CreateTexture(nil, "BACKGROUND")
     bg:SetPoint("TOPLEFT", -INSET, INSET)
     bg:SetPoint("BOTTOMRIGHT", INSET, -INSET)
-    bg:SetColorTexture(0, 0, 0, 0.85)
+    bg:SetColorTexture(0, 0, 0, 0.15)
     frame.bg = bg
 
     local powerH = 0
@@ -361,7 +361,7 @@ function Elements.CreateCastBar(frame)
 
     local bg = cb:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
-    bg:SetColorTexture(0, 0, 0, 0.85)
+    bg:SetColorTexture(0, 0, 0, 0.15)
 
     local icon = cb:CreateTexture(nil, "ARTWORK")
     icon:SetSize(height, height)
