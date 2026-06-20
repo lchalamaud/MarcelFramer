@@ -31,6 +31,9 @@ buffs/debuffs.
 - Cycle : créer une **branche dédiée** (`feature/…`, `fix/…`, `docs/…`) →
   committer dessus → pousser **la branche** → ouvrir une **PR** (cible `develop`
   par défaut).
+- **Le titre de la PR doit toujours être en anglais** (le corps peut rester en
+  français) et **commencer par le gitmoji associé** au type de changement
+  (ex. `✨` feature, `🐛` fix, `📝` docs, `♻️` refactor).
 - **Ne JAMAIS valider / merger / fermer une PR de ma propre initiative** : c'est
   **toujours l'utilisateur** qui revoit et merge — **sauf s'il le demande
   explicitement**. Par défaut, mon rôle s'arrête à ouvrir et mettre à jour la PR.

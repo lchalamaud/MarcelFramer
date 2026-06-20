@@ -57,6 +57,7 @@ local function CreateUnit(unit, key)
     Elements.BuildVisuals(frame)
     if cfg.showCastBar then Elements.CreateCastBar(frame) end
     Elements.CreateAuras(frame)
+    Elements.EnableTooltip(frame)
     ns:ApplyPosition(frame, key)
     ns:RegisterFrame(key, frame)
 

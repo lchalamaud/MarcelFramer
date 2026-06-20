@@ -266,6 +266,36 @@ function Elements.CreateAuras(frame)
 end
 
 -- ----------------------------------------------------------------------------
+--  Tooltip au survol
+-- ----------------------------------------------------------------------------
+local function Unit_OnEnter(self)
+    local unit = self.unit
+    if not unit or not UnitExists(unit) then return end
+    -- GameTooltip_SetDefaultAnchor est le point surcharge par les addons de
+    -- tooltip (TipTac, etc.) : on respecte ainsi leur position. Repli sur
+    -- ANCHOR_RIGHT si la fonction Blizzard est absente.
+    if GameTooltip_SetDefaultAnchor then
+        GameTooltip_SetDefaultAnchor(GameTooltip, self)
+    else
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    end
+    GameTooltip:SetUnit(unit)
+    GameTooltip:Show()
+    self.isMouseOver = true
+end
+
+local function Unit_OnLeave(self)
+    self.isMouseOver = nil
+    GameTooltip:Hide()
+end
+
+-- Active le tooltip natif au survol (sur tout cadre/bouton d'unite)
+function Elements.EnableTooltip(frame)
+    frame:HookScript("OnEnter", Unit_OnEnter)
+    frame:HookScript("OnLeave", Unit_OnLeave)
+end
+
+-- ----------------------------------------------------------------------------
 --  Barre de cast (player / target)
 -- ----------------------------------------------------------------------------
 local CAST_EVENTS = {
