@@ -68,7 +68,7 @@ ns.config = {
     -- ----------------------------------------------------------------------
     player = {
         enabled       = true,
-        width         = 220, height = 48, scale = 1,
+        width         = 190, height = 45, scale = 1,
         point         = { point = "CENTER", relPoint = "CENTER", x = -300, y = -160 },
         powerRatio    = 0.26,
         classColor    = true,              -- true = couleur de classe / reaction ; sinon color = {r,g,b}
@@ -98,7 +98,7 @@ ns.config = {
     },
     target = {
         enabled       = true,
-        width         = 220, height = 48, scale = 1,
+        width         = 190, height = 45, scale = 1,
         point         = { point = "CENTER", relPoint = "CENTER", x = 300, y = -160 },
         powerRatio    = 0.26,
         classColor    = true,
@@ -122,7 +122,7 @@ ns.config = {
     },
     targettarget = {
         enabled    = true,
-        width      = 130, height = 26, scale = 1,
+        width      = 100, height = 20, scale = 1,
         point      = { point = "CENTER", relPoint = "CENTER", x = 300, y = -235 },
         classColor = true,
         showPower  = false,
@@ -136,7 +136,7 @@ ns.config = {
     },
     pet = {
         enabled    = true,
-        width      = 150, height = 30, scale = 1,
+        width      = 125, height = 25, scale = 1,
         point      = { point = "CENTER", relPoint = "CENTER", x = -300, y = -235 },
         powerRatio = 0.30,
         classColor = false, color = { 0.45, 0.55, 0.75 },
