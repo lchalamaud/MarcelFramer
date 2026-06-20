@@ -81,6 +81,15 @@ ns.config = {
         showPowerText = true,              -- valeur de ressource
         showCastBar   = true,              -- barre d'incantation
         castHeight    = 18,
+        showCombat    = true,              -- icone de combat (coin haut)
+        combatSize    = 18,
+        -- combatStyle : design de l'icone (sprite plat transparent, facon emoji).
+        -- Valeurs : "combat" (defaut, epees croisees rouges de l'atlas),
+        --           "swords", "skull", "cross", "star", "diamond", "triangle".
+        -- combatStyle = "skull",
+        -- Overrides libres : combatAtlas = "NomDAtlasBlizzard", ou
+        --   combatTexture = "Interface\\...\\Truc" (+ combatTexCoord = {l,r,h,b}).
+        -- combatColor = {r,g,b} : teinte l'icone (defaut du preset "combat" = rouge doux).
         showBuffs     = true,
         showDebuffs   = true,
         numAuras      = 6,
@@ -103,6 +112,8 @@ ns.config = {
         showPowerText = true,
         showCastBar   = true,
         castHeight    = 18,
+        showCombat    = true,              -- icone de combat (coin haut)
+        combatSize    = 18,
         showBuffs     = true,
         showDebuffs   = true,
         numAuras      = 6,

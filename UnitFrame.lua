@@ -21,6 +21,8 @@ end
 local function OnEvent(self, event, arg1)
     if event == "PLAYER_ENTERING_WORLD" then
         Elements.FullUpdate(self)
+    elseif event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
+        Elements.UpdateCombat(self)
     elseif event == "PLAYER_TARGET_CHANGED" then
         Elements.FullUpdate(self)
     elseif event == "UNIT_PET" then
@@ -68,6 +70,8 @@ local function CreateUnit(unit, key)
 
     if key == "player" then
         frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+        frame:RegisterEvent("PLAYER_REGEN_DISABLED")
+        frame:RegisterEvent("PLAYER_REGEN_ENABLED")
         frame:Show()                       -- toujours visible
     elseif key == "target" then
         frame:RegisterEvent("PLAYER_TARGET_CHANGED")
