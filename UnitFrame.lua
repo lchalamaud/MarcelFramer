@@ -58,7 +58,7 @@ local function CreateUnit(unit, key)
     if cfg.showCastBar then Elements.CreateCastBar(frame) end
     Elements.CreateAuras(frame)
     ns:ApplyPosition(frame, key)
-    ns:RegisterFrame(key, frame, false)
+    ns:RegisterFrame(key, frame)
 
     -- Evenements
     Elements.RegisterUnitEvents(frame)

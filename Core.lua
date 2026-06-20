@@ -7,7 +7,7 @@ local addonName, ns = ...
 local noop = function() end
 ns.noop = noop
 
-ns.registry = {}   -- key -> { frame = <frame>, isHeader = bool }
+ns.registry = {}   -- key -> { frame = <frame> }
 ns.movers   = {}   -- key -> mover overlay frame
 ns.unlocked = false
 
@@ -27,25 +27,10 @@ function ns:GetPosition(key)
 end
 
 function ns:ApplyPosition(frame, key)
-    -- Les en-tetes securises ne se repositionnent pas en combat
-    if frame.isMfHeader and InCombatLockdown() then
-        ns.pendingReposition = ns.pendingReposition or {}
-        ns.pendingReposition[key] = true
-        return
-    end
     local p = ns:GetPosition(key)
     if not p then return end
     frame:ClearAllPoints()
     frame:SetPoint(p.point, UIParent, p.relPoint or p.point, p.x or 0, p.y or 0)
-end
-
-function ns:ApplyPendingPositions()
-    if not ns.pendingReposition then return end
-    for key in pairs(ns.pendingReposition) do
-        local data = ns.registry[key]
-        if data then ns:ApplyPosition(data.frame, key) end
-    end
-    ns.pendingReposition = nil
 end
 
 -- ----------------------------------------------------------------------------
@@ -66,19 +51,11 @@ local function MoverDragStop(self)
     self:SetPoint(point, UIParent, relPoint, x, y)
 end
 
-local function CreateMover(key, target, isHeader)
+local function CreateMover(key, target)
     local cfg = ns.config[key]
-    local w = cfg.width
-    local h
-    if isHeader then
-        local rows = (key == "raid") and (cfg.unitsPerColumn or 5) or 4
-        h = cfg.height * rows + (cfg.spacing or 6) * (rows - 1)
-    else
-        h = cfg.height
-    end
 
     local mover = CreateFrame("Frame", nil, UIParent)
-    mover:SetSize(w, h)
+    mover:SetSize(cfg.width, cfg.height)
     mover:SetFrameStrata("DIALOG")
     mover:SetMovable(true)
     mover:SetClampedToScreen(true)
@@ -102,11 +79,10 @@ local function CreateMover(key, target, isHeader)
     ns.movers[key] = mover
 end
 
-function ns:RegisterFrame(key, frame, isHeader)
+function ns:RegisterFrame(key, frame)
     frame.mfKey = key
-    frame.isMfHeader = isHeader
-    ns.registry[key] = { frame = frame, isHeader = isHeader }
-    CreateMover(key, frame, isHeader)
+    ns.registry[key] = { frame = frame }
+    CreateMover(key, frame)
 end
 
 function ns:Unlock()
@@ -151,20 +127,6 @@ local function killFrame(frame)
     frame:Hide()
 end
 
-function ns:HideBlizzardRaid()
-    if ns.config.hideBlizzardRaid == false then return end
-    if InCombatLockdown() then
-        ns.pendingRaidHide = true
-        return
-    end
-    ns.pendingRaidHide = false
-    if CompactRaidFrameManager_SetSetting then
-        CompactRaidFrameManager_SetSetting("IsShown", "0")
-    end
-    if CompactRaidFrameManager then CompactRaidFrameManager:Hide() end
-    if CompactRaidFrameContainer then CompactRaidFrameContainer:Hide() end
-end
-
 function ns:HideBlizzard()
     if ns.config.hideBlizzard == false then return end
 
@@ -195,17 +157,8 @@ function ns:HideBlizzard()
     if FocusFrameHealthBar then FocusFrameHealthBar:UnregisterAllEvents() end
     if FocusFrameManaBar then FocusFrameManaBar:UnregisterAllEvents() end
 
-    -- Groupe (party)
-    for i = 1, (MAX_PARTY_MEMBERS or 4) do
-        killFrame(_G["PartyMemberFrame" .. i])
-        local hb = _G["PartyMemberFrame" .. i .. "HealthBar"]
-        if hb then hb:UnregisterAllEvents() end
-        local mb = _G["PartyMemberFrame" .. i .. "ManaBar"]
-        if mb then mb:UnregisterAllEvents() end
-    end
-
-    -- Raid (protege : hors combat uniquement)
-    ns:HideBlizzardRaid()
+    -- Groupe (party) et raid : volontairement non masques. MarcelFramer ne gere
+    -- pas ces cadres ; on laisse l'interface Blizzard de base s'en charger.
 end
 
 -- ----------------------------------------------------------------------------
@@ -230,14 +183,7 @@ function ns:RefreshAll()
     local E = ns.Elements
     for _, data in pairs(ns.registry) do
         local frame = data.frame
-        if data.isHeader then
-            for _, child in ipairs({ frame:GetChildren() }) do
-                if child.health then
-                    E.UpdateHealth(child)
-                    E.UpdateName(child)
-                end
-            end
-        elseif frame.health then
+        if frame.health then
             E.UpdateHealth(frame)
             E.UpdateName(frame)
         end
@@ -269,8 +215,6 @@ end
 -- ----------------------------------------------------------------------------
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_LOGIN")
-f:RegisterEvent("PLAYER_REGEN_ENABLED")
-f:RegisterEvent("GROUP_ROSTER_UPDATE")
 f:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_LOGIN" then
         MarcelFramerDB = MarcelFramerDB or {}
@@ -279,11 +223,5 @@ f:SetScript("OnEvent", function(self, event)
         ns:ApplySavedColors()
         ns:HideBlizzard()
         if ns.UnitFrame and ns.UnitFrame.CreateAll then ns.UnitFrame.CreateAll() end
-        if ns.GroupFrames and ns.GroupFrames.CreateAll then ns.GroupFrames.CreateAll() end
-    elseif event == "PLAYER_REGEN_ENABLED" then
-        if ns.pendingRaidHide then ns:HideBlizzardRaid() end
-        if ns.pendingReposition then ns:ApplyPendingPositions() end
-    elseif event == "GROUP_ROSTER_UPDATE" then
-        if not InCombatLockdown() then ns:HideBlizzardRaid() end
     end
 end)

@@ -35,9 +35,10 @@ ns.classBarColors = {
 
 -- Comportement global
 ns.config = {
-    -- Masquage des cadres Blizzard par defaut
-    hideBlizzard     = true,   -- player/target/tot/pet/focus/party
-    hideBlizzardRaid = true,   -- cadres de raid compacts Blizzard (protege : hors combat)
+    -- Masquage des cadres Blizzard par defaut.
+    -- player/target/tot/pet/focus uniquement. Le groupe et le raid utilisent
+    -- l'interface Blizzard de base (non masques par MarcelFramer).
+    hideBlizzard     = true,
 
     -- Adoucissement des couleurs de classe / reaction (moins flashy).
     -- saturation 1 = couleur pure ; 0 = gris. brightness 1 = normal ; < 1 = plus sombre.
@@ -136,51 +137,5 @@ ns.config = {
         showDebuffs= false,
         numAuras   = 0,
         fontSize   = 10,
-    },
-
-    -- ----------------------------------------------------------------------
-    --  Cadres de groupe (en-tetes securises)
-    --  attribPoint : sens de croissance dans une colonne (TOP = vers le bas).
-    -- ----------------------------------------------------------------------
-    party = {
-        enabled       = true,
-        width         = 160, height = 40, scale = 1,
-        point         = { point = "TOPLEFT", relPoint = "TOPLEFT", x = 30, y = -250 },
-        attribPoint   = "TOP",   -- empile vers le bas
-        spacing       = 8,
-        showPlayer    = false,   -- afficher aussi le joueur dans le cadre party
-        powerRatio    = 0.24,
-        classColor    = true,
-        showPower     = true,
-        showName      = true,
-        showLevel     = false,
-        showPercent   = true,
-        showBuffs     = false,
-        showDebuffs   = true,
-        numAuras      = 3,
-        auraSize      = 16,
-        fontSize      = 11,
-    },
-    raid = {
-        enabled          = true,
-        width            = 90, height = 36, scale = 1,
-        point            = { point = "TOPLEFT", relPoint = "TOPLEFT", x = 30, y = -250 },
-        attribPoint      = "TOP",   -- empile vers le bas dans une colonne
-        spacing          = 4,
-        unitsPerColumn   = 5,
-        maxColumns       = 8,
-        columnSpacing    = 6,
-        columnAnchorPoint= "LEFT",  -- les colonnes s'ajoutent vers la droite
-        groupFilter      = "1,2,3,4,5,6,7,8",
-        powerRatio       = 0.18,
-        classColor       = true,
-        showPower        = true,
-        showName         = true,
-        showLevel        = false,
-        showPercent      = false,
-        showBuffs        = false,
-        showDebuffs      = false,
-        numAuras         = 0,
-        fontSize         = 9,
     },
 }
