@@ -159,6 +159,34 @@ local function CreateAuraIcon(parent, size)
     return btn
 end
 
+-- Presets d'icone de combat : des sprites PLATS transparents facon "emoji"
+-- (pas des icones carrees a bordure). { texture, l, r, haut, bas }.
+-- Choix via cfg.combatStyle. Les marqueurs de raid partagent une meme texture
+-- atlas 4x4 (UI-RaidTargetingIcons) ; on cible la bonne case par texcoords.
+local RAID_ICONS = "Interface\\TargetingFrame\\UI-RaidTargetingIcons"
+local COMBAT_PRESETS = {
+    -- atlas Blizzard : epees croisees (variante "Map", plus coloree). Un peu
+    -- agrandie (scale) et teintee de rouge discret pour evoquer le combat.
+    combat   = { atlas = "ShipMissionIcon-Combat-Map", scale = 1.2, color = {1, 0.5, 0.5} },
+    swords   = { tex = "Interface\\CharacterFrame\\UI-StateIcon", coords = {0.5, 1.0, 0.0, 0.494} },
+    skull    = { tex = RAID_ICONS, coords = {0.75, 1.00, 0.25, 0.50} },  -- crane blanc
+    cross    = { tex = RAID_ICONS, coords = {0.50, 0.75, 0.25, 0.50} },  -- croix rouge
+    star     = { tex = RAID_ICONS, coords = {0.00, 0.25, 0.00, 0.25} },  -- etoile jaune
+    diamond  = { tex = RAID_ICONS, coords = {0.50, 0.75, 0.00, 0.25} },  -- losange violet
+    triangle = { tex = RAID_ICONS, coords = {0.75, 1.00, 0.00, 0.25} },  -- triangle vert
+}
+ns.combatPresets = COMBAT_PRESETS
+
+-- Applique un preset (atlas ou texture+texcoords) a la texture donnee.
+local function ApplyCombatPreset(tex, p)
+    if p.atlas then
+        tex:SetAtlas(p.atlas)
+    else
+        tex:SetTexture(p.tex)
+        tex:SetTexCoord(unpack(p.coords))
+    end
+end
+
 -- Construit barres + textes (appele a la creation de chaque frame/bouton)
 function Elements.BuildVisuals(frame)
     local cfg = frame.config
@@ -214,6 +242,35 @@ function Elements.BuildVisuals(frame)
     name:SetWordWrap(false)
     frame.nameText = name
     if cfg.showName == false then name:Hide() end
+
+    -- Icone de combat : coin interieur-haut (oppose aux debuffs, donc pas de
+    -- collision). Texture d'etat Blizzard (epees croisees), masquee par defaut.
+    if cfg.showCombat then
+        local size = cfg.combatSize or 18
+        local color
+        local ci = health:CreateTexture(nil, "OVERLAY")
+        -- Design choisi via cfg.combatStyle (preset, defaut "combat"). Overrides
+        -- prioritaires : cfg.combatAtlas (atlas Blizzard) puis cfg.combatTexture
+        -- (+ cfg.combatTexCoord optionnel).
+        if cfg.combatAtlas then
+            ci:SetAtlas(cfg.combatAtlas)
+        elseif cfg.combatTexture then
+            ci:SetTexture(cfg.combatTexture)
+            ci:SetTexCoord(unpack(cfg.combatTexCoord or {0, 1, 0, 1}))
+        else
+            local p = COMBAT_PRESETS[cfg.combatStyle or "combat"] or COMBAT_PRESETS.combat
+            ApplyCombatPreset(ci, p)
+            if p.scale then size = size * p.scale end
+            color = p.color
+        end
+        -- Teinte : cfg.combatColor a priorite sur celle du preset.
+        color = cfg.combatColor or color
+        if color then ci:SetVertexColor(color[1], color[2], color[3]) end
+        ci:SetSize(size, size)
+        ci:SetPoint("CENTER", frame, mirror and "TOPLEFT" or "TOPRIGHT", 0, 0)
+        ci:Hide()
+        frame.combatIcon = ci
+    end
 
     -- Texte de ressource
     if frame.power and cfg.showPowerText then
@@ -553,6 +610,17 @@ function Elements.UpdateAuras(frame)
     if frame.debuffIcons then FillAuras(frame.debuffIcons, unit, "HARMFUL", true) end
 end
 
+-- Affiche/masque l'icone de combat selon l'etat de l'unite de la frame.
+function Elements.UpdateCombat(frame)
+    if not frame.combatIcon then return end
+    local unit = frame.unit
+    if unit and UnitExists(unit) and UnitAffectingCombat(unit) then
+        frame.combatIcon:Show()
+    else
+        frame.combatIcon:Hide()
+    end
+end
+
 function Elements.FullUpdate(frame)
     local unit = frame.unit
     if not unit or not UnitExists(unit) then return end
@@ -560,6 +628,7 @@ function Elements.FullUpdate(frame)
     Elements.UpdatePower(frame)
     Elements.UpdateName(frame)
     Elements.UpdateAuras(frame)
+    Elements.UpdateCombat(frame)
     if frame.castBar then Elements.CastBarCheck(frame) end
 end
 
@@ -570,6 +639,7 @@ local UNIT_EVENTS = {
     "UNIT_HEALTH", "UNIT_MAXHEALTH",
     "UNIT_POWER_UPDATE", "UNIT_MAXPOWER", "UNIT_DISPLAYPOWER",
     "UNIT_AURA", "UNIT_NAME_UPDATE", "UNIT_LEVEL",
+    "UNIT_FLAGS",
 }
 
 function Elements.RegisterUnitEvents(frame)
@@ -593,5 +663,7 @@ function Elements.OnEvent(self, event, arg1)
         Elements.UpdateAuras(self)
     elseif event == "UNIT_NAME_UPDATE" or event == "UNIT_LEVEL" then
         Elements.UpdateName(self)
+    elseif event == "UNIT_FLAGS" then
+        Elements.UpdateCombat(self)
     end
 end
