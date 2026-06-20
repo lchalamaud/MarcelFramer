@@ -618,6 +618,11 @@ local function build()
     refreshSizeSliders()
     updateLockButton()
     showTab(1)
+
+    -- Une frame fraichement creee est affichee par defaut : on la masque pour
+    -- que le premier /mf config (qui appelle build) passe par la branche "show"
+    -- de Toggle (sinon il faudrait deux appels pour l'ouvrir).
+    frame:Hide()
 end
 
 function ns.Options.Toggle()
