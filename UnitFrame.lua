@@ -55,6 +55,7 @@ local function CreateUnit(unit, key)
     frame:SetAttribute("*type2", "togglemenu")   -- menu d'unite Blizzard natif (securise, OK combat)
 
     Elements.BuildVisuals(frame)
+    if cfg.showCastBar then Elements.CreateCastBar(frame) end
     Elements.CreateAuras(frame)
     ns:ApplyPosition(frame, key)
     ns:RegisterFrame(key, frame, false)
