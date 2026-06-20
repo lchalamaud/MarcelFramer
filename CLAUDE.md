@@ -29,8 +29,12 @@ buffs/debuffs.
   Ces branches sont réservées ; toute modification passe **systématiquement par
   une Pull Request**.
 - Cycle : créer une **branche dédiée** (`feature/…`, `fix/…`, `docs/…`) →
-  committer dessus → pousser **la branche** → ouvrir une **PR** (cible `develop`
-  par défaut).
+  committer dessus → **demander l'autorisation de push** → pousser **la branche**
+  → ouvrir une **PR** (cible `develop` par défaut).
+- **TOUJOURS vérifier la branche courante AVANT de committer**
+  (`git branch --show-current`). Si je suis sur `main` ou `develop`, je crée /
+  bascule d'abord sur une branche dédiée. Ne **jamais** committer sans avoir
+  confirmé être sur la bonne branche.
 - **Le titre de la PR doit toujours être en anglais** (le corps peut rester en
   français) et **commencer par le gitmoji associé** au type de changement
   (ex. `✨` feature, `🐛` fix, `📝` docs, `♻️` refactor).
@@ -40,10 +44,17 @@ buffs/debuffs.
 - **Ne JAMAIS valider / merger / fermer une PR de ma propre initiative** : c'est
   **toujours l'utilisateur** qui revoit et merge — **sauf s'il le demande
   explicitement**. Par défaut, mon rôle s'arrête à ouvrir et mettre à jour la PR.
-- **Autorisation permanente** : quand l'utilisateur me demande de « faire une PR »
-  (ou équivalent), je suis autorisé sans reconfirmer à : **créer une branche**,
-  **committer** (jamais directement sur `main` ni `develop`), **pousser la branche**
-  et **ouvrir la PR**. La validation/merge reste exclue (cf. point précédent).
+- **Autorisation permanente (commit uniquement)** : quand l'utilisateur me
+  demande de « faire une PR » (ou équivalent), je suis autorisé sans reconfirmer
+  à **créer une branche** et **committer** dessus (jamais sur `main` ni `develop`).
+  Cette autorisation **n'inclut PAS le push**.
+- **JAMAIS de `git push` sans autorisation explicite.** Avant tout push, je dois
+  **demander à l'utilisateur** : (1) ai-je le droit de pousser, et (2) vers quelle
+  branche distante. Je commit librement, mais je **n'envoie rien sur le remote**
+  tant que l'utilisateur n'a pas validé. (Le push fait partie de l'ouverture d'une
+  PR : il est donc lui aussi soumis à cette confirmation.)
+- **JAMAIS de `git push --force`** (a fortiori sur une branche protégée) sans
+  demande explicite de l'utilisateur pour ce push précis.
 
 ## Décisions verrouillées — NE PAS rediscuter
 
