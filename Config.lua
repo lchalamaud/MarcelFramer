@@ -20,17 +20,17 @@ ns.media = {
 -- (0%), right = bord clair (100%). Mettre a nil pour revenir au degrade derive.
 -- Ces valeurs sont prises telles quelles (pas d'adoucissement colorAdjust).
 ns.classBarColors = {
-    WARRIOR     = { left = {0.569, 0.412, 0.251}, right = {0.780, 0.569, 0.329} },
-    PALADIN     = { left = {0.725, 0.294, 0.412}, right = {0.941, 0.596, 0.706} },
-    DEATHKNIGHT = { left = {0.431, 0.055, 0.118}, right = {0.769, 0.118, 0.227} },
-    MONK        = { left = {0.000, 0.431, 0.314}, right = {0.000, 0.725, 0.549} },
-    PRIEST      = { left = {0.580, 0.580, 0.647}, right = {0.863, 0.863, 0.910} },
-    DRUID       = { left = {0.647, 0.282, 0.000}, right = {1.000, 0.549, 0.078} },
-    SHAMAN      = { left = {0.000, 0.216, 0.549}, right = {0.000, 0.439, 0.871} },
-    MAGE        = { left = {0.078, 0.510, 0.627}, right = {0.247, 0.780, 0.922} },
-    WARLOCK     = { left = {0.267, 0.267, 0.667}, right = {0.529, 0.533, 0.933} },
-    HUNTER      = { left = {0.314, 0.510, 0.118}, right = {0.667, 0.827, 0.447} },
-    ROGUE       = { left = {0.627, 0.580, 0.000}, right = {1.000, 0.957, 0.408} },
+    WARRIOR     = { left = {0.431, 0.267, 0.165}, right = {0.596, 0.431, 0.224} }, -- 6E442A -> 986E39
+    PALADIN     = { left = {0.957, 0.475, 0.635}, right = {0.882, 0.494, 0.596} }, -- F479A2 -> E17E98
+    DEATHKNIGHT = { left = {0.455, 0.059, 0.122}, right = {0.616, 0.114, 0.220} }, -- 740F1F -> 9D1D38
+    MONK        = { left = {0.000, 0.431, 0.314}, right = {0.000, 0.690, 0.522} }, -- 006E50 -> 00B085
+    PRIEST      = { left = {0.843, 0.808, 0.784}, right = {1.000, 1.000, 1.000} }, -- D7CEC8 -> FFFFFF
+    DRUID       = { left = {0.769, 0.337, 0.000}, right = {0.808, 0.478, 0.196} }, -- C45600 -> CE7A32
+    SHAMAN      = { left = {0.000, 0.255, 0.647}, right = {0.000, 0.369, 0.733} }, -- 0041A5 -> 005EBB
+    MAGE        = { left = {0.075, 0.475, 0.584}, right = {0.216, 0.682, 0.808} }, -- 137995 -> 37AECE
+    WARLOCK     = { left = {0.267, 0.267, 0.667}, right = {0.463, 0.467, 0.820} }, -- 4444AA -> 7677D1
+    HUNTER      = { left = {0.392, 0.506, 0.290}, right = {0.557, 0.714, 0.412} }, -- 64814A -> 8EB669
+    ROGUE       = { left = {0.780, 0.714, 0.231}, right = {0.875, 0.808, 0.400} }, -- C7B63B -> DFCE66
 }
 
 -- Comportement global
