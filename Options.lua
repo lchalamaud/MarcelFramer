@@ -26,6 +26,27 @@ end
 local frame
 local swatches = {}   -- class -> { left, right, leftHex, rightHex, label }
 
+-- Section "Tailles des cadres" : cadre selectionne + sliders
+-- Ordre = disposition de la grille 2x2 (ligne du haut puis ligne du bas).
+-- Bas : Familier a gauche (sous le joueur), Cible-cible a droite (sous la cible).
+local SIZE_KEYS = {
+    { key = "player",       label = "Joueur"      },
+    { key = "target",       label = "Cible"       },
+    { key = "pet",          label = "Familier"    },
+    { key = "targettarget", label = "Cible-cible" },
+}
+local SIZE_SLIDERS = {
+    { field = "width",  label = "Largeur", min = 60,  max = 400, step = 1    },
+    { field = "height", label = "Hauteur", min = 16,  max = 140, step = 1    },
+    { field = "scale",  label = "Echelle", min = 0.5, max = 2.0, step = 0.05 },
+}
+local sizeState = { currentKey = "player", sliders = {}, selButtons = {} }
+
+local function fmtSize(field, v)
+    if field == "scale" then return string.format("%.2f", v) end
+    return tostring(math.floor(v + 0.5))
+end
+
 -- Conversions hexa <-> rgb (0-1)
 local function RGBToHex(r, g, b)
     return string.format("%02X%02X%02X",
@@ -146,9 +167,60 @@ local function resetAll()
     ns:RefreshAll()
 end
 
+-- Recharge les sliders + le bouton actif depuis ns.config[currentKey]
+-- (sans declencher de sauvegarde : flag suppress).
+local function refreshSizeSliders()
+    local cfg = ns.config[sizeState.currentKey]
+    if not cfg then return end
+    for _, s in ipairs(sizeState.sliders) do
+        local info = s.info
+        local v = (info.field == "scale") and (cfg.scale or 1) or (cfg[info.field] or info.min)
+        s.suppress = true
+        s:SetValue(v)
+        s.suppress = false
+        s.valueLabel:SetText(info.label .. " : " .. fmtSize(info.field, v))
+    end
+    for key, btn in pairs(sizeState.selButtons) do
+        if key == sizeState.currentKey then btn:LockHighlight() else btn:UnlockHighlight() end
+    end
+end
+
+local function makeSizeSlider(parent, name, info)
+    local s = CreateFrame("Slider", name, parent, "OptionsSliderTemplate")
+    s:SetWidth(200)
+    s:SetMinMaxValues(info.min, info.max)
+    s:SetValueStep(info.step)
+    if s.SetObeyStepOnDrag then s:SetObeyStepOnDrag(true) end
+    local low  = s.Low  or _G[name .. "Low"]
+    local high = s.High or _G[name .. "High"]
+    if low  then low:SetText("")  end   -- min/max masques : le label central suffit
+    if high then high:SetText("") end
+    s.valueLabel = s.Text or _G[name .. "Text"]
+    if not s.valueLabel then   -- repli si le template ne nomme pas sa region
+        s.valueLabel = s:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        s.valueLabel:SetPoint("BOTTOM", s, "TOP", 0, 2)
+    end
+    s.info = info
+    s:SetScript("OnValueChanged", function(self, value)
+        if self.suppress then return end
+        if info.field == "scale" then
+            value = math.floor(value / info.step + 0.5) * info.step
+        else
+            value = math.floor(value + 0.5)
+        end
+        local key = sizeState.currentKey
+        ns.config[key][info.field] = value
+        MarcelFramerDB.sizes[key] = MarcelFramerDB.sizes[key] or {}
+        MarcelFramerDB.sizes[key][info.field] = value
+        self.valueLabel:SetText(info.label .. " : " .. fmtSize(info.field, value))
+        ns:ApplySize(key)
+    end)
+    return s
+end
+
 local function build()
     frame = CreateFrame("Frame", "MarcelFramerOptions", UIParent, "BackdropTemplate")
-    frame:SetSize(420, 426)
+    frame:SetSize(700, 426)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
     frame:SetBackdrop({
@@ -166,7 +238,7 @@ local function build()
 
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -14)
-    title:SetText("MarcelFramer \226\128\148 Couleurs par classe")
+    title:SetText("MarcelFramer \226\128\148 Configuration")
 
     local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", -4, -4)
@@ -214,12 +286,64 @@ local function build()
     end
 
     local reset = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    reset:SetSize(130, 22)
-    reset:SetPoint("BOTTOM", 0, 14)
-    reset:SetText("Reinitialiser")
+    reset:SetSize(150, 22)
+    reset:SetPoint("BOTTOMLEFT", 16, 14)
+    reset:SetText("Reinit. couleurs")
     reset:SetScript("OnClick", resetAll)
 
+    -- ----------------------------------------------------------------------
+    --  Colonne de droite : tailles des cadres
+    -- ----------------------------------------------------------------------
+    local divider = frame:CreateTexture(nil, "ARTWORK")
+    divider:SetColorTexture(1, 1, 1, 0.12)
+    divider:SetWidth(1)
+    divider:SetPoint("TOPLEFT", frame, "TOPLEFT", 404, -40)
+    divider:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 404, 44)
+
+    local RX = 432   -- origine x de la colonne tailles
+
+    local sTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    sTitle:SetPoint("TOPLEFT", RX, -46)
+    sTitle:SetText("Tailles des cadres")
+
+    -- Selecteur de cadre (grille 2x2)
+    for i, e in ipairs(SIZE_KEYS) do
+        local b = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+        b:SetSize(112, 22)
+        local col = (i - 1) % 2
+        local row = math.floor((i - 1) / 2)
+        b:SetPoint("TOPLEFT", RX + col * 118, -70 - row * 26)
+        b:SetText(e.label)
+        b:SetScript("OnClick", function()
+            sizeState.currentKey = e.key
+            refreshSizeSliders()
+        end)
+        sizeState.selButtons[e.key] = b
+    end
+
+    -- Sliders Largeur / Hauteur / Echelle
+    wipe(sizeState.sliders)
+    for i, info in ipairs(SIZE_SLIDERS) do
+        local s = makeSizeSlider(frame, "MarcelFramerSizeSlider" .. info.field, info)
+        s:SetPoint("TOPLEFT", RX + 8, -150 - (i - 1) * 50)
+        sizeState.sliders[i] = s
+    end
+
+    local note = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    note:SetPoint("TOPLEFT", RX, -300)
+    note:SetText("Ajuste hors combat (differe pendant le combat).")
+
+    local resetSize = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    resetSize:SetSize(150, 22)
+    resetSize:SetPoint("BOTTOMRIGHT", -16, 14)
+    resetSize:SetText("Reinit. tailles")
+    resetSize:SetScript("OnClick", function()
+        ns:ResetSizes()
+        refreshSizeSliders()
+    end)
+
     refreshSwatches()
+    refreshSizeSliders()
 end
 
 function ns.Options.Toggle()
@@ -228,6 +352,7 @@ function ns.Options.Toggle()
         frame:Hide()
     else
         refreshSwatches()
+        refreshSizeSliders()
         frame:Show()
     end
 end

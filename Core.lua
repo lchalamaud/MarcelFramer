@@ -10,6 +10,16 @@ ns.noop = noop
 ns.registry = {}   -- key -> { frame = <frame> }
 ns.movers   = {}   -- key -> mover overlay frame
 ns.unlocked = false
+ns.pendingSizes = {}   -- key -> true : tailles a appliquer a la sortie de combat
+
+-- Tailles par defaut (Config.lua), capturees avant toute fusion DB (pour /reset)
+ns.sizeDefaults = {}
+for _, key in ipairs({ "player", "target", "targettarget", "pet" }) do
+    local c = ns.config[key]
+    if c then
+        ns.sizeDefaults[key] = { width = c.width, height = c.height, scale = c.scale or 1 }
+    end
+end
 
 local function MF_Print(msg)
     DEFAULT_CHAT_FRAME:AddMessage("|cff66ccffMarcelFramer|r : " .. msg)
@@ -56,6 +66,7 @@ local function CreateMover(key, target)
 
     local mover = CreateFrame("Frame", nil, UIParent)
     mover:SetSize(cfg.width, cfg.height)
+    mover:SetScale(cfg.scale or 1)
     mover:SetFrameStrata("DIALOG")
     mover:SetMovable(true)
     mover:SetClampedToScreen(true)
@@ -191,6 +202,57 @@ function ns:RefreshAll()
 end
 
 -- ----------------------------------------------------------------------------
+--  Tailles des cadres (live + SavedVariables)
+-- ----------------------------------------------------------------------------
+-- Fusionne les tailles sauvegardees dans ns.config (AVANT creation des cadres,
+-- car UnitFrame lit cfg.width/height/scale a la creation).
+function ns:ApplySavedSizes()
+    local sizes = MarcelFramerDB and MarcelFramerDB.sizes
+    if not sizes then return end
+    for key, s in pairs(sizes) do
+        local c = ns.config[key]
+        if c then
+            if s.width  then c.width  = s.width  end
+            if s.height then c.height = s.height end
+            if s.scale  then c.scale  = s.scale  end
+        end
+    end
+end
+
+-- Applique a chaud la taille d'un cadre (+ son mover) depuis ns.config.
+-- Differe en combat : SetSize/SetScale sont proteges sur un cadre securise
+-- pendant le lockdown (rejoue a PLAYER_REGEN_ENABLED).
+function ns:ApplySize(key)
+    local data = ns.registry[key]
+    if not data then return false end
+    if InCombatLockdown() then
+        ns.pendingSizes[key] = true
+        return false
+    end
+    local frame = data.frame
+    local cfg = ns.config[key]
+    frame:SetSize(cfg.width, cfg.height)
+    frame:SetScale(cfg.scale or 1)
+    if ns.Elements and ns.Elements.LayoutBars then ns.Elements.LayoutBars(frame) end
+    local mover = ns.movers[key]
+    if mover then
+        mover:SetSize(cfg.width, cfg.height)
+        mover:SetScale(cfg.scale or 1)
+    end
+    return true
+end
+
+-- Restaure toutes les tailles aux valeurs de Config.lua
+function ns:ResetSizes()
+    if MarcelFramerDB.sizes then wipe(MarcelFramerDB.sizes) end
+    for key, def in pairs(ns.sizeDefaults) do
+        local c = ns.config[key]
+        if c then c.width, c.height, c.scale = def.width, def.height, def.scale end
+        ns:ApplySize(key)
+    end
+end
+
+-- ----------------------------------------------------------------------------
 --  Commandes slash
 -- ----------------------------------------------------------------------------
 SLASH_MARCELFRAMER1 = "/marcelframer"
@@ -215,13 +277,24 @@ end
 -- ----------------------------------------------------------------------------
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_LOGIN")
+f:RegisterEvent("PLAYER_REGEN_ENABLED")
 f:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_LOGIN" then
         MarcelFramerDB = MarcelFramerDB or {}
         MarcelFramerDB.positions = MarcelFramerDB.positions or {}
         MarcelFramerDB.classBarColors = MarcelFramerDB.classBarColors or {}
+        MarcelFramerDB.sizes = MarcelFramerDB.sizes or {}
         ns:ApplySavedColors()
+        ns:ApplySavedSizes()
         ns:HideBlizzard()
         if ns.UnitFrame and ns.UnitFrame.CreateAll then ns.UnitFrame.CreateAll() end
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        -- Sortie de combat : applique les tailles mises en attente pendant le lockdown
+        if next(ns.pendingSizes) then
+            local keys = {}
+            for k in pairs(ns.pendingSizes) do keys[#keys + 1] = k end
+            wipe(ns.pendingSizes)
+            for _, k in ipairs(keys) do ns:ApplySize(k) end
+        end
     end
 end)

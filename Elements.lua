@@ -187,10 +187,25 @@ local function ApplyCombatPreset(tex, p)
     end
 end
 
+-- (Re)calcule la hauteur des barres vie/ressource selon cfg.height / powerRatio.
+-- Logique partagee : appelee a la construction ET lors d'un changement de taille
+-- a chaud (ns:ApplySize). La largeur suit toute seule via les ancres TOPLEFT/RIGHT.
+function Elements.LayoutBars(frame)
+    local cfg = frame.config
+    local h = cfg.height
+    local powerH = 0
+    if frame.power then
+        powerH = math.max(4, math.floor(h * (cfg.powerRatio or 0.25)))
+        frame.power:SetHeight(powerH)
+    end
+    if frame.health then
+        frame.health:SetHeight(h - powerH - (powerH > 0 and INSET or 0) - INSET)
+    end
+end
+
 -- Construit barres + textes (appele a la creation de chaque frame/bouton)
 function Elements.BuildVisuals(frame)
     local cfg = frame.config
-    local h = cfg.height
     local mirror = cfg.mirror
 
     -- Fond / bordure sombre
@@ -200,16 +215,10 @@ function Elements.BuildVisuals(frame)
     bg:SetColorTexture(0, 0, 0, 0.15)
     frame.bg = bg
 
-    local powerH = 0
-    if cfg.showPower then
-        powerH = math.max(4, math.floor(h * (cfg.powerRatio or 0.25)))
-    end
-
     -- Barre de vie
     local health = CreateBar(frame)
     health:SetPoint("TOPLEFT", INSET, -INSET)
     health:SetPoint("TOPRIGHT", -INSET, -INSET)
-    health:SetHeight(h - powerH - (powerH > 0 and INSET or 0) - INSET)
     if mirror and health.SetReverseFill then health:SetReverseFill(true) end
     frame.health = health
 
@@ -218,10 +227,12 @@ function Elements.BuildVisuals(frame)
         local power = CreateBar(frame)
         power:SetPoint("BOTTOMLEFT", INSET, INSET)
         power:SetPoint("BOTTOMRIGHT", -INSET, INSET)
-        power:SetHeight(powerH)
         if mirror and power.SetReverseFill then power:SetReverseFill(true) end
         frame.power = power
     end
+
+    -- Hauteurs des deux barres (calcul partage, re-jouable a chaud)
+    Elements.LayoutBars(frame)
 
     -- Textes : nom du cote "exterieur", valeurs du cote "interieur"
     local fontSize = cfg.fontSize or 11
