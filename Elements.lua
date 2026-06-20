@@ -2,7 +2,7 @@ local addonName, ns = ...
 
 -- ============================================================================
 --  Elements.lua — Briques reutilisables (barres, textes, couleurs, auras, cast)
---  Utilisees a la fois par UnitFrame.lua et GroupFrames.lua.
+--  Utilisees par UnitFrame.lua.
 -- ============================================================================
 
 local Elements = {}
