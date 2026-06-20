@@ -34,9 +34,16 @@ buffs/debuffs.
 - **Le titre de la PR doit toujours être en anglais** (le corps peut rester en
   français) et **commencer par le gitmoji associé** au type de changement
   (ex. `✨` feature, `🐛` fix, `📝` docs, `♻️` refactor).
+- **Les messages de commit doivent toujours être en anglais** (titre **et**
+  corps), eux aussi préfixés du **gitmoji** correspondant. Seuls le corps de la
+  PR et les échanges avec l'utilisateur restent en français.
 - **Ne JAMAIS valider / merger / fermer une PR de ma propre initiative** : c'est
   **toujours l'utilisateur** qui revoit et merge — **sauf s'il le demande
   explicitement**. Par défaut, mon rôle s'arrête à ouvrir et mettre à jour la PR.
+- **Autorisation permanente** : quand l'utilisateur me demande de « faire une PR »
+  (ou équivalent), je suis autorisé sans reconfirmer à : **créer une branche**,
+  **committer** (jamais directement sur `main` ni `develop`), **pousser la branche**
+  et **ouvrir la PR**. La validation/merge reste exclue (cf. point précédent).
 
 ## Décisions verrouillées — NE PAS rediscuter
 
