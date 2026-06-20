@@ -1,0 +1,12 @@
+## Interface: 50504
+## Title: MarcelFramer
+## Notes: Cadres d'unites autonomes (player, target, tot, pet, party, raid) sans dependance.
+## Author: Louis
+## Version: 1.0.0
+## SavedVariables: MarcelFramerDB
+
+Config.lua
+Core.lua
+Elements.lua
+UnitFrame.lua
+GroupFrames.lua

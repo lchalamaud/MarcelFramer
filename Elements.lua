@@ -1,0 +1,401 @@
+local addonName, ns = ...
+
+-- ============================================================================
+--  Elements.lua — Briques reutilisables (barres, textes, couleurs, auras, cast)
+--  Utilisees a la fois par UnitFrame.lua et GroupFrames.lua.
+-- ============================================================================
+
+local Elements = {}
+ns.Elements = Elements
+
+local INSET = 1
+
+-- ----------------------------------------------------------------------------
+--  Detection de l'API d'auras (MoP 5.5.4) avec repli
+-- ----------------------------------------------------------------------------
+local GetAura
+if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
+    GetAura = function(unit, index, filter)
+        local data = C_UnitAuras.GetAuraDataByIndex(unit, index, filter)
+        if not data then return nil end
+        return data.name, data.icon, data.applications, data.dispelName, data.duration, data.expirationTime
+    end
+else
+    GetAura = function(unit, index, filter)
+        return UnitAura(unit, index, filter)  -- name, icon, count, dispelType, duration, expirationTime, ...
+    end
+end
+
+-- ----------------------------------------------------------------------------
+--  Helpers
+-- ----------------------------------------------------------------------------
+local function FormatNumber(v)
+    if v >= 1e6 then
+        return string.format("%.1fM", v / 1e6)
+    elseif v >= 1e4 then
+        return string.format("%.0fk", v / 1e3)
+    end
+    return tostring(v)
+end
+
+local function hex(c) return math.floor(c * 255 + 0.5) end
+
+-- Adoucit une couleur : desature vers sa luminance puis ajuste la luminosite
+local function AdjustColor(r, g, b)
+    local adj = ns.config.colorAdjust
+    if not adj then return r, g, b end
+    local sat = adj.saturation or 1
+    local bri = adj.brightness or 1
+    if sat ~= 1 then
+        local lum = 0.3 * r + 0.59 * g + 0.11 * b
+        r = lum + (r - lum) * sat
+        g = lum + (g - lum) * sat
+        b = lum + (b - lum) * sat
+    end
+    return r * bri, g * bri, b * bri
+end
+
+function Elements.GetUnitColor(unit, cfg)
+    -- Couleur personnalisee explicite : on la respecte telle quelle
+    if cfg and cfg.classColor == false and cfg.color then
+        return cfg.color[1], cfg.color[2], cfg.color[3]
+    end
+    if UnitIsPlayer(unit) then
+        local _, class = UnitClass(unit)
+        local c = class and RAID_CLASS_COLORS[class]
+        if c then return AdjustColor(c.r, c.g, c.b) end
+    else
+        local reaction = UnitReaction(unit, "player")
+        local c = reaction and FACTION_BAR_COLORS[reaction]
+        if c then return AdjustColor(c.r, c.g, c.b) end
+    end
+    return 0.7, 0.7, 0.7
+end
+
+-- Coeur du rendu : peint une barre d'un degrade left -> right (paires r,g,b).
+-- left == right => barre unie. Toujours via SetGradient pour ecraser un eventuel
+-- degrade precedent ; repli SetStatusBarColor si SetGradient absent.
+local function PaintBar(bar, lr, lg, lb, rr, rg, rb)
+    bar:SetStatusBarColor(rr, rg, rb)
+    local tex = bar:GetStatusBarTexture()
+    if tex and tex.SetGradient then
+        local orient = (ns.config.barGradient and ns.config.barGradient.orientation) or "HORIZONTAL"
+        tex:SetGradient(orient, CreateColor(lr, lg, lb, 1), CreateColor(rr, rg, rb, 1))
+    end
+end
+Elements.PaintBar = PaintBar
+
+-- Peint une barre a partir d'UNE couleur (ressource, cast, PNJ). En mode
+-- "gradient" on derive un degrade par luminosite (dark->light) ; sinon uni.
+local function SetBarColor(bar, r, g, b)
+    if ns.config.barStyle == "gradient" then
+        local grad = ns.config.barGradient
+        local dk = grad and grad.dark or 0.72
+        local lt = grad and grad.light or 1.0
+        PaintBar(bar, r * dk, g * dk, b * dk,
+            math.min(r * lt, 1), math.min(g * lt, 1), math.min(b * lt, 1))
+    else
+        PaintBar(bar, r, g, b, r, g, b)
+    end
+end
+
+-- ----------------------------------------------------------------------------
+--  Construction visuelle
+-- ----------------------------------------------------------------------------
+local function BarTexture()
+    if ns.config.barStyle == "blizzard" then
+        return "Interface\\TargetingFrame\\UI-StatusBar"
+    end
+    return ns.media.statusbar
+end
+
+local function CreateBar(parent)
+    local bar = CreateFrame("StatusBar", nil, parent)
+    bar:SetStatusBarTexture(BarTexture())
+    bar:SetMinMaxValues(0, 1)
+    bar:SetValue(1)
+    local bg = bar:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetTexture(ns.media.statusbar)
+    bg:SetVertexColor(0.15, 0.15, 0.15, 0.9)
+    bar.bg = bg
+    return bar
+end
+
+local function CreateAuraIcon(parent, size)
+    local btn = CreateFrame("Frame", nil, parent)
+    btn:SetSize(size, size)
+
+    local bd = btn:CreateTexture(nil, "BACKGROUND")
+    bd:SetPoint("TOPLEFT", -1, 1)
+    bd:SetPoint("BOTTOMRIGHT", 1, -1)
+    bd:SetColorTexture(0, 0, 0, 1)
+    btn.bd = bd
+
+    local tex = btn:CreateTexture(nil, "ARTWORK")
+    tex:SetAllPoints()
+    tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    btn.tex = tex
+
+    local cd = CreateFrame("Cooldown", nil, btn, "CooldownFrameTemplate")
+    cd:SetAllPoints()
+    btn.cd = cd
+
+    local count = btn:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+    count:SetPoint("BOTTOMRIGHT", 1, -1)
+    btn.count = count
+
+    btn:Hide()
+    return btn
+end
+
+-- Construit barres + textes (appele a la creation de chaque frame/bouton)
+function Elements.BuildVisuals(frame)
+    local cfg = frame.config
+    local h = cfg.height
+    local mirror = cfg.mirror
+
+    -- Fond / bordure sombre
+    local bg = frame:CreateTexture(nil, "BACKGROUND")
+    bg:SetPoint("TOPLEFT", -INSET, INSET)
+    bg:SetPoint("BOTTOMRIGHT", INSET, -INSET)
+    bg:SetColorTexture(0, 0, 0, 0.85)
+    frame.bg = bg
+
+    local powerH = 0
+    if cfg.showPower then
+        powerH = math.max(4, math.floor(h * (cfg.powerRatio or 0.25)))
+    end
+
+    -- Barre de vie
+    local health = CreateBar(frame)
+    health:SetPoint("TOPLEFT", INSET, -INSET)
+    health:SetPoint("TOPRIGHT", -INSET, -INSET)
+    health:SetHeight(h - powerH - (powerH > 0 and INSET or 0) - INSET)
+    if mirror and health.SetReverseFill then health:SetReverseFill(true) end
+    frame.health = health
+
+    -- Barre de ressource
+    if cfg.showPower then
+        local power = CreateBar(frame)
+        power:SetPoint("BOTTOMLEFT", INSET, INSET)
+        power:SetPoint("BOTTOMRIGHT", -INSET, INSET)
+        power:SetHeight(powerH)
+        if mirror and power.SetReverseFill then power:SetReverseFill(true) end
+        frame.power = power
+    end
+
+    -- Textes : nom du cote "exterieur", valeurs du cote "interieur"
+    local fontSize = cfg.fontSize or 11
+    local inner = mirror and "LEFT" or "RIGHT"
+    local outer = mirror and "RIGHT" or "LEFT"
+
+    local htext = health:CreateFontString(nil, "OVERLAY")
+    htext:SetFont(ns.media.font, fontSize, "OUTLINE")
+    htext:SetPoint(inner, health, inner, mirror and 3 or -3, 0)
+    htext:SetJustifyH(inner)
+    frame.healthText = htext
+
+    local name = health:CreateFontString(nil, "OVERLAY")
+    name:SetFont(ns.media.font, fontSize, "OUTLINE")
+    name:SetPoint(outer, health, outer, mirror and -3 or 3, 0)
+    name:SetPoint(inner, htext, outer, mirror and 2 or -2, 0)
+    name:SetJustifyH(outer)
+    name:SetWordWrap(false)
+    frame.nameText = name
+    if cfg.showName == false then name:Hide() end
+
+    -- Texte de ressource
+    if frame.power and cfg.showPowerText then
+        local ptext = frame.power:CreateFontString(nil, "OVERLAY")
+        ptext:SetFont(ns.media.font, math.max(8, fontSize - 1), "OUTLINE")
+        ptext:SetPoint(inner, frame.power, inner, mirror and 3 or -3, 0)
+        ptext:SetJustifyH(inner)
+        frame.powerText = ptext
+    end
+end
+
+-- Construit les rangees de buffs/debuffs (sous le cadre / au-dessus, en miroir si besoin)
+function Elements.CreateAuras(frame)
+    local cfg = frame.config
+    local max = cfg.numAuras or 0
+    if max <= 0 then return end
+    local size = cfg.auraSize or 18
+    local mirror = cfg.mirror
+    local below = frame   -- ancre des buffs sous le cadre
+
+    if cfg.showBuffs then
+        frame.buffIcons = {}
+        for i = 1, max do
+            local btn = CreateAuraIcon(frame, size)
+            if i == 1 then
+                if mirror then btn:SetPoint("TOPRIGHT", below, "BOTTOMRIGHT", 0, -3)
+                else btn:SetPoint("TOPLEFT", below, "BOTTOMLEFT", 0, -3) end
+            else
+                if mirror then btn:SetPoint("RIGHT", frame.buffIcons[i - 1], "LEFT", -3, 0)
+                else btn:SetPoint("LEFT", frame.buffIcons[i - 1], "RIGHT", 3, 0) end
+            end
+            frame.buffIcons[i] = btn
+        end
+    end
+
+    if cfg.showDebuffs then
+        frame.debuffIcons = {}
+        for i = 1, max do
+            local btn = CreateAuraIcon(frame, size)
+            if i == 1 then
+                if mirror then btn:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", 0, 3)
+                else btn:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 3) end
+            else
+                if mirror then btn:SetPoint("RIGHT", frame.debuffIcons[i - 1], "LEFT", -3, 0)
+                else btn:SetPoint("LEFT", frame.debuffIcons[i - 1], "RIGHT", 3, 0) end
+            end
+            frame.debuffIcons[i] = btn
+        end
+    end
+end
+
+-- ----------------------------------------------------------------------------
+--  Mises a jour
+-- ----------------------------------------------------------------------------
+function Elements.UpdateHealth(frame)
+    local unit = frame.unit
+    if not unit or not UnitExists(unit) then return end
+    local cur, max = UnitHealth(unit), UnitHealthMax(unit)
+    local bar = frame.health
+    bar:SetMinMaxValues(0, max > 0 and max or 1)
+    bar:SetValue(cur)
+    SetBarColor(bar, Elements.GetUnitColor(unit, frame.config))
+
+    if frame.healthText then
+        local cfg = frame.config
+        local txt = ""
+        if cfg.showHealthValue and max > 0 then
+            txt = FormatNumber(cur) .. "/" .. FormatNumber(max)
+        end
+        if cfg.showPercent and max > 0 then
+            local pct = string.format("%d%%", math.floor(cur / max * 100 + 0.5))
+            txt = (txt ~= "") and (txt .. "  " .. pct) or pct
+        end
+        if txt == "" then txt = FormatNumber(cur) end
+        frame.healthText:SetText(txt)
+    end
+end
+
+function Elements.UpdatePower(frame)
+    if not frame.power then return end
+    local unit = frame.unit
+    if not unit or not UnitExists(unit) then return end
+    local cur, max = UnitPower(unit), UnitPowerMax(unit)
+    local bar = frame.power
+    bar:SetMinMaxValues(0, max > 0 and max or 1)
+    bar:SetValue(cur)
+    local ptype, ptoken = UnitPowerType(unit)
+    local c = (ptoken and PowerBarColor[ptoken]) or PowerBarColor[ptype]
+    if c then
+        SetBarColor(bar, c.r, c.g, c.b)
+    else
+        SetBarColor(bar, 0.3, 0.3, 0.8)
+    end
+    if frame.powerText then
+        frame.powerText:SetText(max > 0 and FormatNumber(cur) or "")
+    end
+end
+
+function Elements.UpdateName(frame)
+    local unit = frame.unit
+    if not unit or not UnitExists(unit) then return end
+    if not frame.nameText then return end
+    local cfg = frame.config
+    local nameStr = UnitName(unit) or ""
+    local prefix = ""
+    if cfg.showLevel then
+        local lvl = UnitLevel(unit)
+        local lvlStr = (lvl and lvl > 0) and tostring(lvl) or "??"
+        if cfg.levelDifficultyColor and GetQuestDifficultyColor then
+            local col = GetQuestDifficultyColor((lvl and lvl > 0) and lvl or 999)
+            prefix = string.format("|cff%02x%02x%02x%s|r ", hex(col.r), hex(col.g), hex(col.b), lvlStr)
+        else
+            prefix = lvlStr .. " "
+        end
+    end
+    frame.nameText:SetText(prefix .. nameStr)
+    frame.nameText:SetTextColor(Elements.GetUnitColor(unit, cfg))
+end
+
+local function FillAuras(icons, unit, filter, isDebuff)
+    for i = 1, #icons do
+        local btn = icons[i]
+        local name, icon, count, dispelType, duration, expiration = GetAura(unit, i, filter)
+        if name then
+            btn.tex:SetTexture(icon)
+            if count and count > 1 then
+                btn.count:SetText(count)
+            else
+                btn.count:SetText("")
+            end
+            if duration and duration > 0 and expiration and expiration > 0 then
+                btn.cd:SetCooldown(expiration - duration, duration)
+                btn.cd:Show()
+            else
+                btn.cd:Hide()
+            end
+            if isDebuff then
+                local c = (dispelType and DebuffTypeColor[dispelType]) or DebuffTypeColor.none
+                btn.bd:SetColorTexture(c.r, c.g, c.b, 1)
+            end
+            btn:Show()
+        else
+            btn:Hide()
+        end
+    end
+end
+
+function Elements.UpdateAuras(frame)
+    local unit = frame.unit
+    if not unit or not UnitExists(unit) then return end
+    if frame.buffIcons then FillAuras(frame.buffIcons, unit, "HELPFUL", false) end
+    if frame.debuffIcons then FillAuras(frame.debuffIcons, unit, "HARMFUL", true) end
+end
+
+function Elements.FullUpdate(frame)
+    local unit = frame.unit
+    if not unit or not UnitExists(unit) then return end
+    Elements.UpdateHealth(frame)
+    Elements.UpdatePower(frame)
+    Elements.UpdateName(frame)
+    Elements.UpdateAuras(frame)
+end
+
+-- ----------------------------------------------------------------------------
+--  Evenements unite (filtres par unite)
+-- ----------------------------------------------------------------------------
+local UNIT_EVENTS = {
+    "UNIT_HEALTH", "UNIT_MAXHEALTH",
+    "UNIT_POWER_UPDATE", "UNIT_MAXPOWER", "UNIT_DISPLAYPOWER",
+    "UNIT_AURA", "UNIT_NAME_UPDATE", "UNIT_LEVEL",
+}
+
+function Elements.RegisterUnitEvents(frame)
+    for _, ev in ipairs(UNIT_EVENTS) do
+        frame:RegisterEvent(ev)
+    end
+end
+
+-- Dispatcher partage : ne traite que les events filtres sur frame.unit
+function Elements.OnEvent(self, event, arg1)
+    local unit = self.unit
+    if not unit or arg1 ~= unit then return end
+    if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
+        Elements.UpdateHealth(self)
+    elseif event == "UNIT_POWER_UPDATE" or event == "UNIT_MAXPOWER" then
+        Elements.UpdatePower(self)
+    elseif event == "UNIT_DISPLAYPOWER" then
+        Elements.UpdatePower(self)
+        Elements.UpdateHealth(self)
+    elseif event == "UNIT_AURA" then
+        Elements.UpdateAuras(self)
+    elseif event == "UNIT_NAME_UPDATE" or event == "UNIT_LEVEL" then
+        Elements.UpdateName(self)
+    end
+end
