@@ -10,10 +10,23 @@ local addonName, ns = ...
 -- Medias partages (textures / police)
 -- statusbar = texture de base des barres. WHITE8X8 = aplat propre, sert aussi
 -- de support au degrade doux (voir barStyle). Le style "blizzard" ignore ceci.
+--
+-- Police : Rajdhani (celle de la maquette), embarquee dans media/ (licence OFL,
+-- voir media/OFL.txt). 3 graisses fournies ; on en choisit UNE pour tout l'addon
+-- (WoW ne gere pas le font-weight : l'emphase passe par le flag "OUTLINE").
+-- Si le fichier est introuvable au chargement, Core.lua bascule automatiquement
+-- sur STANDARD_TEXT_FONT (repli propre).
+local FONT_PATH = "Interface\\AddOns\\MarcelFramer\\media\\"
 ns.media = {
     statusbar = "Interface\\Buttons\\WHITE8X8",
-    font      = STANDARD_TEXT_FONT,
+    fonts = {
+        medium   = FONT_PATH .. "Rajdhani-Medium.ttf",
+        semibold = FONT_PATH .. "Rajdhani-SemiBold.ttf",
+        bold     = FONT_PATH .. "Rajdhani-Bold.ttf",
+    },
 }
+-- Graisse utilisee partout (medium / semibold / bold). Defaut : semibold.
+ns.media.font = ns.media.fonts.semibold
 
 -- Degrade explicite par classe pour la barre de vie des JOUEURS (r,g,b en 0-1).
 -- Utilise quand barStyle == "gradient" et classColor ~= false ; left = bord fonce
@@ -46,15 +59,29 @@ ns.powerColors = {
     RUNIC_POWER = {0.30, 0.70, 0.85}, -- 4DB3D9
 }
 
+-- Degrades VERTICAUX explicites de la barre de ressource (stops de la maquette,
+-- CSS linear-gradient(to bottom, top -> bottom)). top = bord clair (haut),
+-- bottom = bord fonce (bas). Utilises tels quels en mode "gradient" tant que la
+-- couleur du jeton n'a PAS ete personnalisee via /mf config : dans ce cas on
+-- derive plutot un degrade vertical de la couleur unie editee (ns.powerColors),
+-- pour respecter le choix de l'utilisateur. Jetons absents -> ns.powerColors.
+ns.powerGradients = {
+    MANA        = { top = {0.290, 0.569, 0.910}, bottom = {0.122, 0.373, 0.722} }, -- 4A91E8 -> 1F5FB8
+    RAGE        = { top = {0.878, 0.337, 0.294}, bottom = {0.639, 0.165, 0.133} }, -- E0564B -> A32A22
+    ENERGY      = { top = {0.910, 0.812, 0.341}, bottom = {0.710, 0.573, 0.122} }, -- E8CF57 -> B5921F
+    FOCUS       = { top = {0.937, 0.573, 0.333}, bottom = {0.749, 0.369, 0.149} }, -- EF9255 -> BF5E26
+    RUNIC_POWER = { top = {0.322, 0.776, 0.902}, bottom = {0.122, 0.541, 0.698} }, -- 52C6E6 -> 1F8AB2
+}
+
 -- Couleurs de reaction des PNJ (et de toute unite sans couleur de classe).
 -- Categorie derivee de UnitReaction (1-8) : <=2 hostile, 3 non amical (unfriendly),
 -- 4 neutre, >=5 amical. Couleur unie {r,g,b} prise telle quelle (WYSIWYG, pas
 -- d'adoucissement colorAdjust). Editable via /mf config.
 ns.reactionColors = {
-    hostile    = {0.75, 0.24, 0.24}, -- C73D3D
-    unfriendly = {0.80, 0.52, 0.26}, -- CC8542
-    neutral    = {0.80, 0.72, 0.26}, -- CCB842
-    friendly   = {0.34, 0.63, 0.34}, -- 57A157
+    hostile    = {0.878, 0.196, 0.180}, -- E0322E (maquette v2)
+    unfriendly = {0.910, 0.400, 0.122}, -- E8661F
+    neutral    = {0.847, 0.839, 0.243}, -- D8D63E
+    friendly   = {0.306, 0.824, 0.341}, -- 4ED257
 }
 
 -- Mappe une valeur de UnitReaction (1-8) vers une cle de ns.reactionColors.
@@ -97,13 +124,31 @@ ns.config = {
     barGradient = { dark = 0.72, light = 1.0, orientation = "HORIZONTAL" },
 
     -- ----------------------------------------------------------------------
+    --  Style "maquette" : couleurs de piste + reflets (gloss) + badge combat
+    -- ----------------------------------------------------------------------
+    -- Couleur de fond (piste) des barres vide, {r,g,b} en 0-1 (maquette).
+    healthTrack = { 0.141, 0.122, 0.106 }, -- 241F1B
+    powerTrack  = { 0.098, 0.086, 0.106 }, -- 19161B
+    -- Reflets glossy sur la barre de vie (overlay vertical + liseres) et reflet
+    -- haut sur la ressource. Traduction des linear-gradient/box-shadow CSS.
+    glossy = true,
+    -- Indicateur de combat : la maquette v2 utilise la simple icone d'epees
+    -- croisees (atlas) en coin, PAS le badge circulaire. false = icone plate.
+    combatBadge = false,
+    -- Coins arrondis (masque applique aux textures de barre). EXPERIMENTAL :
+    -- depend de la presence du masque "common-iconmask" sur le client. Si les
+    -- barres disparaissent apres activation, le masque est absent : remettre a
+    -- false. Desactive par defaut par securite (non testable hors du jeu).
+    roundedCorners = false,
+
+    -- ----------------------------------------------------------------------
     --  Cadres simples
     -- ----------------------------------------------------------------------
     player = {
         enabled       = true,
         width         = 190, height = 45, scale = 1,
         point         = { point = "CENTER", relPoint = "CENTER", x = -213, y = -127 },
-        powerRatio    = 0.26,
+        powerRatio    = 0.22,              -- ~10/45 (barre de ressource fine, maquette)
         classColor    = true,              -- true = couleur de classe / reaction ; sinon color = {r,g,b}
         -- color      = { 0.2, 0.6, 0.2 },
         showPower     = true,
@@ -133,7 +178,7 @@ ns.config = {
         enabled       = true,
         width         = 190, height = 45, scale = 1,
         point         = { point = "CENTER", relPoint = "CENTER", x = 213, y = -127 },
-        powerRatio    = 0.26,
+        powerRatio    = 0.22,              -- ~10/45 (barre de ressource fine, maquette)
         classColor    = true,
         mirror        = true,              -- cadre en miroir du joueur
         showPower     = true,

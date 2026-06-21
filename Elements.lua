@@ -8,7 +8,45 @@ local addonName, ns = ...
 local Elements = {}
 ns.Elements = Elements
 
-local INSET = 0   -- 0 = pas de contour (barres bord a bord) ; >0 = liseré sombre
+-- Bord noir 1px autour du cadre + separateur 1px entre vie et ressource
+-- (maquette v2 : border:1px solid #000). Le fond noir opaque du cadre apparait
+-- la ou les barres sont en retrait de INSET.
+local INSET = 1
+
+-- Detection du support des masques (MaskTexture) : moteur retail moderne (MoP
+-- 5.5.4) -> disponible. Traduction de border-radius/clip CSS. Repli propre si
+-- absent (badge carre, pas de coins arrondis) plutot qu'une erreur.
+local HAS_MASK
+do
+    local probe = CreateFrame("Frame")
+    HAS_MASK = type(probe.CreateMaskTexture) == "function"
+end
+
+local PORTRAIT_MASK = "Interface\\CHARACTERFRAME\\TempPortraitAlphaMask" -- masque rond (cercle)
+local ROUND_MASK    = "Interface\\Common\\common-iconmask"               -- masque coins arrondis
+
+-- Ajoute un masque ROND a une texture (border-radius:50% du badge de combat).
+local function AddCircleMask(tex)
+    if not HAS_MASK then return end
+    local m = tex:GetParent():CreateMaskTexture()
+    m:SetTexture(PORTRAIT_MASK)
+    m:SetAllPoints(tex)
+    tex:AddMaskTexture(m)
+end
+
+-- Applique des coins arrondis (border-radius:3px) au cadre : masque partage sur
+-- les textures de barre. EXPERIMENTAL (cf. ns.config.roundedCorners).
+local function ApplyRoundedCorners(frame)
+    if not HAS_MASK then return end
+    local mask = frame:CreateMaskTexture()
+    mask:SetTexture(ROUND_MASK, "CLAMPTOWHITE", "CLAMPTOWHITE")
+    mask:SetAllPoints(frame)
+    frame.cornerMask = mask
+    local function addTo(tex) if tex then tex:AddMaskTexture(mask) end end
+    addTo(frame.bg)
+    if frame.health then addTo(frame.health:GetStatusBarTexture()); addTo(frame.health.bg) end
+    if frame.power  then addTo(frame.power:GetStatusBarTexture());  addTo(frame.power.bg)  end
+end
 
 -- ----------------------------------------------------------------------------
 --  Detection de l'API d'auras (MoP 5.5.4) avec repli
@@ -99,6 +137,18 @@ local function PaintBar(bar, lr, lg, lb, rr, rg, rb)
 end
 Elements.PaintBar = PaintBar
 
+-- Peint une barre d'un degrade VERTICAL (bas -> haut). Traduction CSS de
+-- linear-gradient(to bottom, top, bottom) : top = clair (haut), bottom = fonce.
+-- WoW SetGradient("VERTICAL", minColor, maxColor) : min = bas, max = haut.
+local function PaintBarVertical(bar, br, bg_, bb, tr, tg, tb)
+    bar:SetStatusBarColor(tr, tg, tb)
+    local tex = bar:GetStatusBarTexture()
+    if tex and tex.SetGradient then
+        tex:SetGradient("VERTICAL", CreateColor(br, bg_, bb, 1), CreateColor(tr, tg, tb, 1))
+    end
+end
+Elements.PaintBarVertical = PaintBarVertical
+
 -- Peint une barre a partir d'UNE couleur (ressource, cast, PNJ). En mode
 -- "gradient" on derive un degrade par luminosite (dark->light) ; sinon uni.
 local function SetBarColor(bar, r, g, b)
@@ -113,6 +163,39 @@ local function SetBarColor(bar, r, g, b)
     end
 end
 
+-- Couleur unie d'une ressource : ns.powerColors (editable /mf config) puis repli
+-- PowerBarColor Blizzard, puis defaut bleute.
+local function ResolvePowerColor(ptype, ptoken)
+    local cc = ptoken and ns.powerColors and ns.powerColors[ptoken]
+    if cc then return cc[1], cc[2], cc[3] end
+    local c = (ptoken and PowerBarColor[ptoken]) or PowerBarColor[ptype]
+    if c then return c.r, c.g, c.b end
+    return 0.3, 0.3, 0.8
+end
+
+-- Peint la barre de ressource. En style "gradient" : degrade VERTICAL (maquette).
+-- Priorite au degrade explicite ns.powerGradients[jeton], SAUF si l'utilisateur a
+-- personnalise la couleur du jeton via /mf config (MarcelFramerDB.powerColors) :
+-- on derive alors le degrade vertical de cette couleur unie (respect du choix).
+local function PaintResource(bar, ptype, ptoken)
+    if ns.config.barStyle ~= "gradient" then
+        SetBarColor(bar, ResolvePowerColor(ptype, ptoken))
+        return
+    end
+    local userColor = ptoken and MarcelFramerDB and MarcelFramerDB.powerColors
+        and MarcelFramerDB.powerColors[ptoken]
+    local g = ptoken and ns.powerGradients and ns.powerGradients[ptoken]
+    if g and not userColor then
+        PaintBarVertical(bar, g.bottom[1], g.bottom[2], g.bottom[3], g.top[1], g.top[2], g.top[3])
+        return
+    end
+    local r, gg, b = ResolvePowerColor(ptype, ptoken)
+    local grad = ns.config.barGradient
+    local dk = (grad and grad.dark) or 0.72
+    PaintBarVertical(bar, r * dk, gg * dk, b * dk, r, gg, b)
+end
+Elements.PaintResource = PaintResource
+
 -- ----------------------------------------------------------------------------
 --  Construction visuelle
 -- ----------------------------------------------------------------------------
@@ -123,7 +206,8 @@ local function BarTexture()
     return ns.media.statusbar
 end
 
-local function CreateBar(parent)
+-- trackColor : couleur de la piste (barre vide), {r,g,b}. CSS background du track.
+local function CreateBar(parent, trackColor)
     local bar = CreateFrame("StatusBar", nil, parent)
     bar:SetStatusBarTexture(BarTexture())
     bar:SetMinMaxValues(0, 1)
@@ -131,9 +215,75 @@ local function CreateBar(parent)
     local bg = bar:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetTexture(ns.media.statusbar)
-    bg:SetVertexColor(0, 0, 0, 0.15)
+    local tc = trackColor
+    if tc then bg:SetVertexColor(tc[1], tc[2], tc[3], 1) else bg:SetVertexColor(0, 0, 0, 0.15) end
     bar.bg = bg
+
+    -- Ombre interne haute (box-shadow: inset 0 1px) : fine bande sombre degradee.
+    if ns.config.glossy then
+        local sh = bar:CreateTexture(nil, "BORDER")
+        sh:SetTexture(ns.media.statusbar)
+        sh:SetPoint("TOPLEFT")
+        sh:SetPoint("TOPRIGHT")
+        sh:SetHeight(2)
+        if sh.SetGradient then
+            sh:SetGradient("VERTICAL", CreateColor(0, 0, 0, 0), CreateColor(0, 0, 0, 0.55))
+        else
+            sh:SetVertexColor(0, 0, 0, 0.4)
+        end
+        bar.topShadow = sh
+    end
     return bar
+end
+
+-- Gloss de la barre de VIE : overlay vertical (clair haut -> sombre bas) sur le
+-- remplissage + liseré brillant 1px en haut + liseré sombre 1px sur le bord
+-- meneur du remplissage. Traduction des linear-gradient/box-shadow de la maquette.
+local function AddHealthGloss(bar, mirror)
+    if not ns.config.glossy then return end
+    local fill = bar:GetStatusBarTexture()
+    if not fill then return end
+
+    local gloss = bar:CreateTexture(nil, "ARTWORK", nil, 2)
+    gloss:SetTexture(ns.media.statusbar)
+    gloss:SetAllPoints(fill)
+    if gloss.SetGradient then
+        gloss:SetGradient("VERTICAL", CreateColor(0, 0, 0, 0.26), CreateColor(1, 1, 1, 0.14))
+    end
+    bar.gloss = gloss
+
+    local hi = bar:CreateTexture(nil, "ARTWORK", nil, 3)
+    hi:SetColorTexture(1, 1, 1, 0.32)
+    hi:SetPoint("TOPLEFT", fill, "TOPLEFT", 0, 0)
+    hi:SetPoint("TOPRIGHT", fill, "TOPRIGHT", 0, 0)
+    hi:SetHeight(1)
+    bar.glossHi = hi
+
+    -- bord meneur du remplissage : droite en normal, gauche en miroir (reverse fill)
+    local lead = mirror and "LEFT" or "RIGHT"
+    local edge = bar:CreateTexture(nil, "ARTWORK", nil, 3)
+    edge:SetColorTexture(0, 0, 0, 0.30)
+    edge:SetPoint("TOP" .. lead, fill, "TOP" .. lead, 0, 0)
+    edge:SetPoint("BOTTOM" .. lead, fill, "BOTTOM" .. lead, 0, 0)
+    edge:SetWidth(1)
+    bar.glossEdge = edge
+end
+
+-- Reflet haut de la barre de RESSOURCE : overlay sur la moitie haute du
+-- remplissage (blanc .16 -> transparent). CSS linear-gradient top 50%.
+local function AddPowerGloss(bar)
+    if not ns.config.glossy then return end
+    local fill = bar:GetStatusBarTexture()
+    if not fill then return end
+    local hi = bar:CreateTexture(nil, "ARTWORK", nil, 2)
+    hi:SetTexture(ns.media.statusbar)
+    hi:SetPoint("TOPLEFT", fill, "TOPLEFT", 0, 0)
+    hi:SetPoint("TOPRIGHT", fill, "TOPRIGHT", 0, 0)
+    hi:SetPoint("BOTTOM", fill, "CENTER", 0, 0)
+    if hi.SetGradient then
+        hi:SetGradient("VERTICAL", CreateColor(1, 1, 1, 0), CreateColor(1, 1, 1, 0.16))
+    end
+    bar.gloss = hi
 end
 
 local function CreateAuraIcon(parent, size)
@@ -191,6 +341,84 @@ local function ApplyCombatPreset(tex, p)
     end
 end
 
+-- Badge de combat circulaire (maquette) : lueur orange + anneau + fond sombre
+-- (masques ronds) + epees croisees. Traduction de border-radius:50% +
+-- radial-gradient + border + box-shadow. Statique (pas de pulse, choix retenu).
+-- Renvoie un Frame masque par defaut (Show/Hide via UpdateCombat).
+local function BuildCombatBadge(frame)
+    local cfg = frame.config
+    local size = cfg.combatSize or 18
+    local mirror = cfg.mirror
+    local badge = CreateFrame("Frame", nil, frame)
+    badge:SetSize(size, size)
+    badge:SetPoint("CENTER", frame, mirror and "TOPLEFT" or "TOPRIGHT", 0, 0)
+    badge:SetFrameLevel(frame:GetFrameLevel() + 5)
+
+    -- box-shadow 0 0 6px rgba(255,90,20,.6) : lueur orange un peu plus grande
+    local glow = badge:CreateTexture(nil, "BACKGROUND")
+    glow:SetColorTexture(1.0, 0.35, 0.08, 0.45)
+    glow:SetPoint("CENTER")
+    glow:SetSize(size * 1.5, size * 1.5)
+    AddCircleMask(glow)
+
+    -- border:1px solid #ff6a2b : anneau orange (cercle plein, le fond le recouvre)
+    local ring = badge:CreateTexture(nil, "BORDER")
+    ring:SetColorTexture(1.0, 0.416, 0.169, 1)
+    ring:SetAllPoints(badge)
+    AddCircleMask(ring)
+
+    -- radial-gradient(#401409 -> #190703) : fond sombre (aplat, approx)
+    local fill = badge:CreateTexture(nil, "ARTWORK")
+    fill:SetColorTexture(0.16, 0.05, 0.02, 1)
+    fill:SetPoint("CENTER")
+    fill:SetSize(size - 2, size - 2)
+    AddCircleMask(fill)
+
+    -- epees croisees (atlas) au centre
+    local swords = badge:CreateTexture(nil, "ARTWORK", nil, 2)
+    local p = COMBAT_PRESETS.combat
+    ApplyCombatPreset(swords, p)
+    if p.color then swords:SetVertexColor(p.color[1], p.color[2], p.color[3]) end
+    swords:SetSize(size * 0.72, size * 0.72)
+    swords:SetPoint("CENTER")
+
+    badge:Hide()
+    return badge
+end
+
+-- Construit l'indicateur de combat : badge circulaire (cfg.combatBadge + masques
+-- dispo) ou, a defaut, l'icone plate historique (presets cfg.combatStyle).
+local function BuildCombat(frame)
+    local cfg = frame.config
+    local mirror = cfg.mirror
+    if cfg.combatBadge and ns.config.combatBadge and HAS_MASK then
+        frame.combatIcon = BuildCombatBadge(frame)
+        return
+    end
+
+    -- Repli : icone plate (comportement existant)
+    local size = cfg.combatSize or 18
+    local color
+    local ci = frame.health:CreateTexture(nil, "OVERLAY")
+    if cfg.combatAtlas then
+        ci:SetAtlas(cfg.combatAtlas)
+    elseif cfg.combatTexture then
+        ci:SetTexture(cfg.combatTexture)
+        ci:SetTexCoord(unpack(cfg.combatTexCoord or {0, 1, 0, 1}))
+    else
+        local p = COMBAT_PRESETS[cfg.combatStyle or "combat"] or COMBAT_PRESETS.combat
+        ApplyCombatPreset(ci, p)
+        if p.scale then size = size * p.scale end
+        color = p.color
+    end
+    color = cfg.combatColor or color
+    if color then ci:SetVertexColor(color[1], color[2], color[3]) end
+    ci:SetSize(size, size)
+    ci:SetPoint("CENTER", frame, mirror and "TOPLEFT" or "TOPRIGHT", 0, 0)
+    ci:Hide()
+    frame.combatIcon = ci
+end
+
 -- (Re)calcule la hauteur des barres vie/ressource selon cfg.height / powerRatio.
 -- Logique partagee : appelee a la construction ET lors d'un changement de taille
 -- a chaud (ns:ApplySize). La largeur suit toute seule via les ancres TOPLEFT/RIGHT.
@@ -198,13 +426,148 @@ function Elements.LayoutBars(frame)
     local cfg = frame.config
     local h = cfg.height
     local powerH = 0
-    if frame.power then
+    local sep = 0
+    -- La barre de ressource ne compte que si elle est presente ET affichee
+    -- (masquee pour les unites sans pouvoir : voir UpdatePower / hasRes v2).
+    if frame.power and frame.powerShown ~= false then
         powerH = math.max(4, math.floor(h * (cfg.powerRatio or 0.25)))
+        sep = INSET                       -- separateur 1px entre vie et ressource
         frame.power:SetHeight(powerH)
     end
     if frame.health then
-        frame.health:SetHeight(h - powerH - (powerH > 0 and INSET or 0) - INSET)
+        -- hauteur restante apres bords haut/bas (2*INSET) et separateur
+        frame.health:SetHeight(h - powerH - 2 * INSET - sep)
     end
+end
+
+-- Applique la police de l'addon a un FontString SANS se fier a la valeur de
+-- retour de SetFont (peu fiable sur ce client). Filet de securite : on pose
+-- d'abord STANDARD_TEXT_FONT (police valide garantie -> jamais d'erreur "Font not
+-- set"), puis on tente ns.media.font. Si elle ne charge pas, la precedente reste.
+-- On enregistre le FontString (+ taille/flags) pour pouvoir RE-appliquer la police
+-- une fois qu'elle est chargee : sur ce client, la police custom se charge de
+-- maniere asynchrone, et le 1er texte cree (le nom) rate souvent l'application.
+ns.fontStrings = ns.fontStrings or {}
+local function ApplyFont(fs, size, flags)
+    fs.mfSize, fs.mfFlags = size, flags or "OUTLINE"
+    fs:SetFont(STANDARD_TEXT_FONT, size, fs.mfFlags)
+    fs:SetFont(ns.media.font, size, fs.mfFlags)
+    ns.fontStrings[fs] = true
+end
+ns.ApplyFont = ApplyFont
+
+-- Re-applique la police a tous les FontStrings connus (apres chargement asynchrone).
+function ns:RefreshFonts()
+    for fs in pairs(ns.fontStrings) do
+        if fs.mfSize then
+            fs:SetFont(STANDARD_TEXT_FONT, fs.mfSize, fs.mfFlags)
+            fs:SetFont(ns.media.font, fs.mfSize, fs.mfFlags)
+        end
+    end
+end
+
+-- Cree un FontString style "maquette" : OUTLINE (font-weight 700) + ombre
+-- (text-shadow 0 1px 2px). Couleur posee par l'appelant.
+local function NewText(parent, size)
+    local fs = parent:CreateFontString(nil, "OVERLAY")
+    ApplyFont(fs, size, "OUTLINE")
+    fs:SetShadowColor(0, 0, 0, 0.95)
+    fs:SetShadowOffset(1, -1)
+    return fs
+end
+
+-- Layout texte CONDENSE (tot/pet et tout cadre non player/target) : nom du cote
+-- "exterieur", valeur du cote "interieur", sur une ligne.
+local function BuildSimpleText(frame)
+    local cfg = frame.config
+    local mirror = cfg.mirror
+    local health = frame.health
+    local fontSize = cfg.fontSize or 11
+    local inner = mirror and "LEFT" or "RIGHT"
+    local outer = mirror and "RIGHT" or "LEFT"
+
+    local htext = NewText(health, fontSize)
+    htext:SetPoint(inner, health, inner, mirror and 3 or -3, 0)
+    htext:SetJustifyH(inner)
+    frame.healthText = htext
+
+    local name = NewText(health, fontSize)
+    name:SetPoint(outer, health, outer, mirror and -3 or 3, 0)
+    name:SetPoint(inner, htext, outer, mirror and 2 or -2, 0)
+    name:SetJustifyH(outer)
+    name:SetWordWrap(false)
+    frame.nameText = name
+    if cfg.showName == false then name:Hide() end
+
+    if frame.power and cfg.showPowerText then
+        local ptext = NewText(frame.power, math.max(8, fontSize - 1))
+        ptext:SetPoint(inner, frame.power, inner, mirror and 3 or -3, 0)
+        ptext:SetJustifyH(inner)
+        frame.powerText = ptext
+    end
+end
+
+-- Layout texte 3 ZONES (player/target, maquette) : nom+niveau a GAUCHE,
+-- pourcentage CENTRE, PV actuel / max a DROITE. Ordre identique pour le joueur
+-- ET la cible (on n'inverse PAS selon mirror : seules les barres/badge suivent
+-- le miroir, pas l'ordre des colonnes de texte).
+local function BuildRichText(frame)
+    local cfg = frame.config
+    local health = frame.health
+    local fontSize = cfg.fontSize or 11
+
+    -- Colonne nom (blanc) + niveau (or) a gauche, calee autour du centre vertical
+    local name = NewText(health, fontSize)
+    name:SetTextColor(1, 1, 1)
+    name:SetJustifyH("LEFT")
+    name:SetWordWrap(false)
+    name:SetWidth((cfg.width or 190) * 0.44)        -- text-overflow:ellipsis -> troncature
+    name:SetPoint("LEFT", health, "LEFT", 7, 6)
+    frame.nameText = name
+    if cfg.showName == false then name:Hide() end
+
+    local level = NewText(health, math.max(8, fontSize - 2))
+    level:SetTextColor(1.0, 0.875, 0.608)           -- ffdf9b
+    level:SetJustifyH("LEFT")
+    level:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -1)
+    frame.levelText = level
+
+    -- Colonne PV actuel (blanc) + / max (creme) a droite
+    local hp = NewText(health, fontSize)
+    hp:SetTextColor(1, 1, 1)
+    hp:SetJustifyH("RIGHT")
+    hp:SetPoint("RIGHT", health, "RIGHT", -7, 6)
+    frame.healthText = hp
+
+    local hpmax = NewText(health, math.max(8, fontSize - 2))
+    hpmax:SetTextColor(0.914, 0.886, 0.847)         -- e9e2d8
+    hpmax:SetJustifyH("RIGHT")
+    hpmax:SetPoint("TOPRIGHT", hp, "BOTTOMRIGHT", 0, -1)
+    frame.healthMaxText = hpmax
+
+    -- Pourcentage centre (plus gros)
+    local pct = NewText(health, fontSize + 4)
+    pct:SetTextColor(1, 1, 1)
+    pct:SetPoint("CENTER", health, "CENTER", 0, 0)
+    frame.percentText = pct
+
+    -- Textes de ressource : cur/max a gauche, % a droite
+    if frame.power then
+        local psize = math.max(8, fontSize - 3)
+        local pcur = NewText(frame.power, psize)
+        pcur:SetTextColor(0.933, 0.945, 0.965)      -- eef1f6
+        pcur:SetJustifyH("LEFT")
+        pcur:SetPoint("LEFT", frame.power, "LEFT", 7, 0)
+        frame.powerText = pcur
+
+        local ppct = NewText(frame.power, psize)
+        ppct:SetTextColor(0.933, 0.945, 0.965)
+        ppct:SetJustifyH("RIGHT")
+        ppct:SetPoint("RIGHT", frame.power, "RIGHT", -7, 0)
+        frame.powerPctText = ppct
+    end
+
+    frame.richText = true
 end
 
 -- Construit barres + textes (appele a la creation de chaque frame/bouton)
@@ -212,23 +575,23 @@ function Elements.BuildVisuals(frame)
     local cfg = frame.config
     local mirror = cfg.mirror
 
-    -- Fond / bordure sombre
+    -- Fond noir opaque couvrant tout le cadre : sert de bord 1px (autour) et de
+    -- separateur 1px (entre vie et ressource), la ou les barres sont en retrait.
     local bg = frame:CreateTexture(nil, "BACKGROUND")
-    bg:SetPoint("TOPLEFT", -INSET, INSET)
-    bg:SetPoint("BOTTOMRIGHT", INSET, -INSET)
-    bg:SetColorTexture(0, 0, 0, 0.15)
+    bg:SetAllPoints(frame)
+    bg:SetColorTexture(0, 0, 0, 1)
     frame.bg = bg
 
-    -- Barre de vie
-    local health = CreateBar(frame)
+    -- Barre de vie (piste sombre maquette)
+    local health = CreateBar(frame, ns.config.healthTrack)
     health:SetPoint("TOPLEFT", INSET, -INSET)
     health:SetPoint("TOPRIGHT", -INSET, -INSET)
     if mirror and health.SetReverseFill then health:SetReverseFill(true) end
     frame.health = health
 
-    -- Barre de ressource
+    -- Barre de ressource (piste sombre maquette)
     if cfg.showPower then
-        local power = CreateBar(frame)
+        local power = CreateBar(frame, ns.config.powerTrack)
         power:SetPoint("BOTTOMLEFT", INSET, INSET)
         power:SetPoint("BOTTOMRIGHT", -INSET, INSET)
         if mirror and power.SetReverseFill then power:SetReverseFill(true) end
@@ -238,63 +601,22 @@ function Elements.BuildVisuals(frame)
     -- Hauteurs des deux barres (calcul partage, re-jouable a chaud)
     Elements.LayoutBars(frame)
 
-    -- Textes : nom du cote "exterieur", valeurs du cote "interieur"
-    local fontSize = cfg.fontSize or 11
-    local inner = mirror and "LEFT" or "RIGHT"
-    local outer = mirror and "RIGHT" or "LEFT"
+    -- Reflets glossy (overlays + liseres), traduits des linear-gradient CSS
+    AddHealthGloss(health, mirror)
+    if frame.power then AddPowerGloss(frame.power) end
 
-    local htext = health:CreateFontString(nil, "OVERLAY")
-    htext:SetFont(ns.media.font, fontSize, "OUTLINE")
-    htext:SetPoint(inner, health, inner, mirror and 3 or -3, 0)
-    htext:SetJustifyH(inner)
-    frame.healthText = htext
+    -- Coins arrondis (best-effort, opt-in)
+    if ns.config.roundedCorners then ApplyRoundedCorners(frame) end
 
-    local name = health:CreateFontString(nil, "OVERLAY")
-    name:SetFont(ns.media.font, fontSize, "OUTLINE")
-    name:SetPoint(outer, health, outer, mirror and -3 or 3, 0)
-    name:SetPoint(inner, htext, outer, mirror and 2 or -2, 0)
-    name:SetJustifyH(outer)
-    name:SetWordWrap(false)
-    frame.nameText = name
-    if cfg.showName == false then name:Hide() end
-
-    -- Icone de combat : coin interieur-haut (oppose aux debuffs, donc pas de
-    -- collision). Texture d'etat Blizzard (epees croisees), masquee par defaut.
-    if cfg.showCombat then
-        local size = cfg.combatSize or 18
-        local color
-        local ci = health:CreateTexture(nil, "OVERLAY")
-        -- Design choisi via cfg.combatStyle (preset, defaut "combat"). Overrides
-        -- prioritaires : cfg.combatAtlas (atlas Blizzard) puis cfg.combatTexture
-        -- (+ cfg.combatTexCoord optionnel).
-        if cfg.combatAtlas then
-            ci:SetAtlas(cfg.combatAtlas)
-        elseif cfg.combatTexture then
-            ci:SetTexture(cfg.combatTexture)
-            ci:SetTexCoord(unpack(cfg.combatTexCoord or {0, 1, 0, 1}))
-        else
-            local p = COMBAT_PRESETS[cfg.combatStyle or "combat"] or COMBAT_PRESETS.combat
-            ApplyCombatPreset(ci, p)
-            if p.scale then size = size * p.scale end
-            color = p.color
-        end
-        -- Teinte : cfg.combatColor a priorite sur celle du preset.
-        color = cfg.combatColor or color
-        if color then ci:SetVertexColor(color[1], color[2], color[3]) end
-        ci:SetSize(size, size)
-        ci:SetPoint("CENTER", frame, mirror and "TOPLEFT" or "TOPRIGHT", 0, 0)
-        ci:Hide()
-        frame.combatIcon = ci
+    -- Textes : layout 3 zones pour player/target, condense sinon
+    if frame.unitType == "player" or frame.unitType == "target" then
+        BuildRichText(frame)
+    else
+        BuildSimpleText(frame)
     end
 
-    -- Texte de ressource
-    if frame.power and cfg.showPowerText then
-        local ptext = frame.power:CreateFontString(nil, "OVERLAY")
-        ptext:SetFont(ns.media.font, math.max(8, fontSize - 1), "OUTLINE")
-        ptext:SetPoint(inner, frame.power, inner, mirror and 3 or -3, 0)
-        ptext:SetJustifyH(inner)
-        frame.powerText = ptext
-    end
+    -- Indicateur de combat (badge circulaire ou icone plate)
+    if cfg.showCombat then BuildCombat(frame) end
 end
 
 -- Construit les rangees de buffs/debuffs (sous le cadre / au-dessus, en miroir si besoin)
@@ -476,7 +798,7 @@ function Elements.CreateCastBar(frame)
     cb.icon = icon
 
     local text = cb:CreateFontString(nil, "OVERLAY")
-    text:SetFont(ns.media.font, cfg.fontSize or 11, "OUTLINE")
+    ApplyFont(text, cfg.fontSize or 11, "OUTLINE")
     text:SetPoint("LEFT", cb, "LEFT", 3, 0)
     text:SetPoint("RIGHT", cb, "RIGHT", -3, 0)
     text:SetJustifyH(mirror and "RIGHT" or "LEFT")
@@ -518,8 +840,24 @@ function Elements.UpdateHealth(frame)
         SetBarColor(bar, Elements.GetUnitColor(unit, frame.config))
     end
 
-    if frame.healthText then
-        local cfg = frame.config
+    local cfg = frame.config
+    if frame.richText then
+        -- 3 zones : PV actuel / max separes + pourcentage centre
+        if frame.healthText then
+            frame.healthText:SetText((cfg.showHealthValue and max > 0) and FormatNumber(cur) or "")
+        end
+        if frame.healthMaxText then
+            frame.healthMaxText:SetText((cfg.showHealthValue and max > 0) and ("/ " .. FormatNumber(max)) or "")
+        end
+        if frame.percentText then
+            if cfg.showPercent and max > 0 then
+                frame.percentText:SetText(string.format("%d%%", math.floor(cur / max * 100 + 0.5)))
+            else
+                frame.percentText:SetText("")
+            end
+        end
+    elseif frame.healthText then
+        -- layout condense : valeur + pourcentage sur une ligne
         local txt = ""
         if cfg.showHealthValue and max > 0 then
             txt = FormatNumber(cur) .. "/" .. FormatNumber(max)
@@ -538,23 +876,34 @@ function Elements.UpdatePower(frame)
     local unit = frame.unit
     if not unit or not UnitExists(unit) then return end
     local cur, max = UnitPower(unit), UnitPowerMax(unit)
+
+    -- hasRes (maquette v2) : masque la barre de ressource si l'unite n'a pas de
+    -- pouvoir (PNJ sans mana, etc.) et agrandit la vie. Re-layout uniquement au
+    -- changement d'etat (pas a chaque tick de ressource).
+    local hasPower = max and max > 0
+    if hasPower ~= (frame.powerShown ~= false) then
+        frame.powerShown = hasPower
+        if hasPower then frame.power:Show() else frame.power:Hide() end
+        Elements.LayoutBars(frame)
+    end
+    if not hasPower then return end
+
     local bar = frame.power
     bar:SetMinMaxValues(0, max > 0 and max or 1)
     bar:SetValue(cur)
     local ptype, ptoken = UnitPowerType(unit)
-    -- Couleur configurable par jeton (ns.powerColors) ; repli PowerBarColor.
-    local cc = ptoken and ns.powerColors and ns.powerColors[ptoken]
-    if cc then
-        SetBarColor(bar, cc[1], cc[2], cc[3])
-    else
-        local c = (ptoken and PowerBarColor[ptoken]) or PowerBarColor[ptype]
-        if c then
-            SetBarColor(bar, c.r, c.g, c.b)
-        else
-            SetBarColor(bar, 0.3, 0.3, 0.8)
+    -- Degrade vertical (maquette) ou couleur unie selon barStyle ; respecte les
+    -- couleurs personnalisees via /mf config (cf. PaintResource).
+    PaintResource(bar, ptype, ptoken)
+
+    if frame.richText then
+        if frame.powerText then
+            frame.powerText:SetText(max > 0 and (FormatNumber(cur) .. " / " .. FormatNumber(max)) or "")
         end
-    end
-    if frame.powerText then
+        if frame.powerPctText then
+            frame.powerPctText:SetText(max > 0 and string.format("%d%%", math.floor(cur / max * 100 + 0.5)) or "")
+        end
+    elseif frame.powerText then
         frame.powerText:SetText(max > 0 and FormatNumber(cur) or "")
     end
 end
@@ -564,6 +913,31 @@ function Elements.UpdateName(frame)
     if not unit or not UnitExists(unit) then return end
     if not frame.nameText then return end
     local cfg = frame.config
+
+    if frame.richText then
+        -- Maquette : nom blanc, niveau dans une zone separee (or, ou couleur de
+        -- difficulte si cfg.levelDifficultyColor).
+        frame.nameText:SetText(UnitName(unit) or "")
+        frame.nameText:SetTextColor(1, 1, 1)
+        if frame.levelText then
+            if cfg.showLevel then
+                local lvl = UnitLevel(unit)
+                local lvlStr = (lvl and lvl > 0) and tostring(lvl) or "??"
+                frame.levelText:SetText(lvlStr)
+                if cfg.levelDifficultyColor and GetQuestDifficultyColor then
+                    local col = GetQuestDifficultyColor((lvl and lvl > 0) and lvl or 999)
+                    frame.levelText:SetTextColor(col.r, col.g, col.b)
+                else
+                    frame.levelText:SetTextColor(1.0, 0.875, 0.608)
+                end
+            else
+                frame.levelText:SetText("")
+            end
+        end
+        return
+    end
+
+    -- Layout condense : niveau en prefixe + nom colore par classe/reaction
     local nameStr = UnitName(unit) or ""
     local prefix = ""
     if cfg.showLevel then

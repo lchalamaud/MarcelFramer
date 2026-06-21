@@ -1,3 +1,7 @@
 # Normalise les fins de ligne : LF dans le depot et a la copie de travail.
 # Evite les warnings CRLF sous Windows et garde des diffs propres.
 * text=auto eol=lf
+
+# Polices embarquees : binaire pur, jamais de conversion de fins de ligne.
+*.ttf binary
+*.otf binary
