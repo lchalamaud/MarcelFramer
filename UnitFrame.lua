@@ -93,4 +93,11 @@ function ns.UnitFrame.CreateAll()
     CreateUnit("target", "target")
     CreateUnit("targettarget", "targettarget")
     CreateUnit("pet", "pet")
+    -- La police custom se charge de maniere asynchrone sur ce client : on la
+    -- re-applique apres un court delai pour rattraper les textes crees avant
+    -- qu'elle soit prete (typiquement le 1er : le nom).
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0.2, function() ns:RefreshFonts() end)
+        C_Timer.After(1.0, function() ns:RefreshFonts() end)
+    end
 end
