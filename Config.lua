@@ -189,7 +189,6 @@ ns.config = {
         point         = { point = "CENTER", relPoint = "CENTER", x = 213, y = -127 },
         powerRatio    = 0.22,              -- ~10/45 (barre de ressource fine, maquette)
         classColor    = true,
-        mirror        = true,              -- cadre en miroir du joueur
         showPower     = true,
         showName      = true,
         showLevel     = true,
