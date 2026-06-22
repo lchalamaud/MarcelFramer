@@ -181,6 +181,18 @@ ns.config = {
         showDebuffs   = true,
         numAuras      = 6,
         auraSize      = 20,
+        -- Affichage des auras : on/off (showBuffs/showDebuffs ci-dessus) et
+        -- ANCRAGE independant pour chaque type, parametrable par cadre.
+        --   point    : coin de la 1re icone de la rangee
+        --   relTo    : "frame" (le cadre) ou "castbar" (sous la barre de cast si
+        --              active, repli sur le cadre si elle est masquee/absente)
+        --   relPoint : coin de la cible (relTo) auquel on accroche `point`
+        --   x, y     : decalage en pixels
+        --   growth   : sens de la rangee — "RIGHT" | "LEFT" | "UP" | "DOWN"
+        -- Champs absents => valeurs par defaut (buffs sous le cadre, debuffs
+        -- au-dessus). Modifier puis /reload pour appliquer.
+        buffAnchor    = { point = "TOPLEFT",    relTo = "castbar", relPoint = "BOTTOMLEFT", x = 0, y = -3, growth = "RIGHT" },
+        debuffAnchor  = { point = "BOTTOMLEFT", relTo = "frame",   relPoint = "TOPLEFT",    x = 0, y = 3,  growth = "RIGHT" },
         fontSize      = 12,
     },
     target = {
@@ -204,6 +216,9 @@ ns.config = {
         showDebuffs   = true,
         numAuras      = 6,
         auraSize      = 20,
+        -- Ancrage des auras (cf. doc du cadre `player`).
+        buffAnchor    = { point = "TOPLEFT",    relTo = "castbar", relPoint = "BOTTOMLEFT", x = 0, y = -3, growth = "RIGHT" },
+        debuffAnchor  = { point = "BOTTOMLEFT", relTo = "frame",   relPoint = "TOPLEFT",    x = 0, y = 3,  growth = "RIGHT" },
         fontSize      = 12,
     },
     focus = {
@@ -227,6 +242,9 @@ ns.config = {
         showDebuffs   = true,
         numAuras      = 6,
         auraSize      = 20,
+        -- Ancrage des auras (cf. doc du cadre `player`).
+        buffAnchor    = { point = "TOPLEFT",    relTo = "castbar", relPoint = "BOTTOMLEFT", x = 0, y = -3, growth = "RIGHT" },
+        debuffAnchor  = { point = "BOTTOMLEFT", relTo = "frame",   relPoint = "TOPLEFT",    x = 0, y = 3,  growth = "RIGHT" },
         fontSize      = 12,
     },
     targettarget = {
