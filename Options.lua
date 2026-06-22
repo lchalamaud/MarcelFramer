@@ -522,11 +522,13 @@ local function buildFramesPanel(panel)
         sizeState.selButtons[e.key] = b
     end
 
-    -- Sliders Largeur / Hauteur / Echelle
+    -- Sliders Largeur / Hauteur / Echelle. Demarre sous la grille de selection
+    -- des cadres (3 lignes depuis l'ajout du focus -> derniere ligne a y=-104),
+    -- pour que le label "Largeur" ne chevauche pas le 3e bouton.
     wipe(sizeState.sliders)
     for i, info in ipairs(SIZE_SLIDERS) do
         local s = makeSizeSlider(panel, "MarcelFramerSizeSlider" .. info.field, info)
-        s:SetPoint("TOPLEFT", 16, -110 - (i - 1) * 50)
+        s:SetPoint("TOPLEFT", 16, -128 - (i - 1) * 50)
         sizeState.sliders[i] = s
     end
 
