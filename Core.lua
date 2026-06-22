@@ -15,7 +15,7 @@ ns.pendingPositions = {}   -- key -> true : positions a appliquer a la sortie de
 
 -- Tailles par defaut (Config.lua), capturees avant toute fusion DB (pour /reset)
 ns.sizeDefaults = {}
-for _, key in ipairs({ "player", "target", "targettarget", "pet" }) do
+for _, key in ipairs({ "player", "target", "focus", "targettarget", "pet" }) do
     local c = ns.config[key]
     if c then
         ns.sizeDefaults[key] = { width = c.width, height = c.height, scale = c.scale or 1 }
@@ -198,10 +198,11 @@ function ns:HideBlizzard()
     if PetFrameHealthBar then PetFrameHealthBar:UnregisterAllEvents() end
     if PetFrameManaBar then PetFrameManaBar:UnregisterAllEvents() end
 
-    -- Focus
+    -- Focus (+ cible du focus Blizzard)
     killFrame(FocusFrame)
     if FocusFrameHealthBar then FocusFrameHealthBar:UnregisterAllEvents() end
     if FocusFrameManaBar then FocusFrameManaBar:UnregisterAllEvents() end
+    if FocusFrameToT then killFrame(FocusFrameToT) end
 
     -- Groupe (party) et raid : volontairement non masques. MarcelFramer ne gere
     -- pas ces cadres ; on laisse l'interface Blizzard de base s'en charger.
@@ -308,7 +309,7 @@ function ns:ResetSizes()
 end
 
 -- ----------------------------------------------------------------------------
---  Barre de cast (player / target uniquement) : preference + bascule live
+--  Barre de cast (player / target / focus uniquement) : preference + bascule live
 -- ----------------------------------------------------------------------------
 -- Fusionne les preferences sauvegardees dans ns.config (AVANT creation des
 -- cadres, car CreateCastBar lit cfg.showCastBar a la creation).
@@ -324,7 +325,7 @@ end
 -- est un StatusBar non protege) : sans restriction de combat. Re-ancre les buffs
 -- pour ne pas laisser de trou a l'emplacement de la barre masquee.
 function ns:SetCastBarEnabled(key, enabled)
-    if key ~= "player" and key ~= "target" then return end
+    if key ~= "player" and key ~= "target" and key ~= "focus" then return end
     enabled = enabled and true or false
     if ns.config[key] then ns.config[key].showCastBar = enabled end
     MarcelFramerDB.castbars = MarcelFramerDB.castbars or {}

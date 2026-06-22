@@ -207,6 +207,29 @@ ns.config = {
         auraSize      = 20,
         fontSize      = 12,
     },
+    focus = {
+        enabled       = true,
+        width         = 190, height = 45, scale = 1,
+        point         = { point = "CENTER", relPoint = "CENTER", x = 0, y = 220 },
+        powerRatio    = 0.22,              -- ~10/45 (barre de ressource fine, maquette)
+        classColor    = true,
+        showPower     = true,
+        showName      = true,
+        showLevel     = true,
+        levelDifficultyColor = true,       -- niveau colore selon l'ecart de niveau
+        showPercent   = true,
+        showHealthValue = true,
+        showPowerText = true,
+        showCastBar   = true,              -- barre d'incantation (activable via /mf config)
+        castHeight    = 18,
+        showCombat    = true,              -- icone de combat (coin haut)
+        combatSize    = 18,
+        showBuffs     = true,
+        showDebuffs   = true,
+        numAuras      = 6,
+        auraSize      = 20,
+        fontSize      = 12,
+    },
     targettarget = {
         enabled    = true,
         width      = 100, height = 20, scale = 1,

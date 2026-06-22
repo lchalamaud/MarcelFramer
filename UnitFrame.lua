@@ -25,6 +25,8 @@ local function OnEvent(self, event, arg1)
         Elements.UpdateCombat(self)
     elseif event == "PLAYER_TARGET_CHANGED" then
         Elements.FullUpdate(self)
+    elseif event == "PLAYER_FOCUS_CHANGED" then
+        Elements.FullUpdate(self)
     elseif event == "UNIT_PET" then
         Elements.FullUpdate(self)
     elseif event == "UNIT_TARGET" then
@@ -60,7 +62,7 @@ local function CreateUnit(unit, key)
     -- Barre de cast : reservee a player / target. On la cree toujours pour ces
     -- deux cadres (meme si desactivee) afin que la bascule via /mf config soit
     -- live, sans /reload. Son etat actif derive de cfg.showCastBar.
-    if key == "player" or key == "target" then Elements.CreateCastBar(frame) end
+    if key == "player" or key == "target" or key == "focus" then Elements.CreateCastBar(frame) end
     Elements.CreateAuras(frame)
     Elements.EnableTooltip(frame)
     ns:ApplyPosition(frame, key)
@@ -79,6 +81,9 @@ local function CreateUnit(unit, key)
     elseif key == "target" then
         frame:RegisterEvent("PLAYER_TARGET_CHANGED")
         RegisterUnitWatch(frame)           -- apparait/disparait selon l'existence
+    elseif key == "focus" then
+        frame:RegisterEvent("PLAYER_FOCUS_CHANGED")
+        RegisterUnitWatch(frame)           -- apparait/disparait selon l'existence du focus
     elseif key == "targettarget" then
         frame:SetScript("OnUpdate", TargetOfTargetOnUpdate)
         RegisterUnitWatch(frame)
@@ -94,6 +99,7 @@ end
 function ns.UnitFrame.CreateAll()
     CreateUnit("player", "player")
     CreateUnit("target", "target")
+    CreateUnit("focus", "focus")
     CreateUnit("targettarget", "targettarget")
     CreateUnit("pet", "pet")
     -- La police custom se charge de maniere asynchrone sur ce client : on la

@@ -284,10 +284,11 @@ end
 --  Section TAILLES / POSITIONS (onglet "Cadres")
 -- ============================================================================
 local SIZE_KEYS = {
-    { key = "player",       label = "Joueur"      },
-    { key = "target",       label = "Cible"       },
-    { key = "pet",          label = "Familier"    },
-    { key = "targettarget", label = "Cible-cible" },
+    { key = "player",       label = "Joueur"        },
+    { key = "target",       label = "Cible"         },
+    { key = "focus",        label = "Focalisation"  },
+    { key = "pet",          label = "Familier"      },
+    { key = "targettarget", label = "Cible-cible"   },
 }
 local SIZE_SLIDERS = {
     { field = "width",  label = "Largeur", min = 60,  max = 400, step = 1    },
@@ -320,7 +321,7 @@ local function refreshSizeSliders()
     -- Case "Barre de cast" : active seulement pour joueur / cible
     if sizeState.castCheck then
         local key = sizeState.currentKey
-        local applicable = (key == "player" or key == "target")
+        local applicable = (key == "player" or key == "target" or key == "focus")
         sizeState.castCheck:SetEnabled(applicable)
         local g = applicable and 1 or 0.5
         sizeState.castLabel:SetTextColor(g, g, g)
@@ -572,7 +573,7 @@ local function buildFramesPanel(panel)
     cbHint:SetPoint("TOPLEFT", 260, -28)
     cbHint:SetWidth(150)
     cbHint:SetJustifyH("LEFT")
-    cbHint:SetText("Joueur et cible uniquement")
+    cbHint:SetText("Joueur, cible et focalisation")
 
     local cast = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
     cast:SetSize(24, 24)
@@ -582,7 +583,7 @@ local function buildFramesPanel(panel)
     castLabel:SetText("Afficher")
     cast:SetScript("OnClick", function(self)
         local key = sizeState.currentKey
-        if key ~= "player" and key ~= "target" then
+        if key ~= "player" and key ~= "target" and key ~= "focus" then
             self:SetChecked(false)
             return
         end
