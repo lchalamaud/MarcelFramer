@@ -2,7 +2,7 @@ local addonName, ns = ...
 
 -- ============================================================================
 --  Options.lua — Fenetre de configuration (/mf config), en onglets :
---    1. Classes            : couleurs des barres de vie par classe (degrade)
+--    1. Classes            : couleur de la barre de vie par classe (une teinte)
 --    2. Ressources & PNJ   : couleurs des ressources + couleurs de reaction PNJ
 --    3. Cadres             : tailles et positions des cadres
 --  API pure : frame maison + ColorPickerFrame Blizzard. Chaque teinte est
@@ -38,11 +38,8 @@ local REACTION_ORDER = {
 -- Copie profonde des defauts (pour /reset), prise AVANT toute fusion DB
 -- (ce fichier s'execute au chargement, donc avant ApplySavedColors @ PLAYER_LOGIN).
 local CLASS_DEFAULTS = {}
-for class, sides in pairs(ns.classBarColors or {}) do
-    CLASS_DEFAULTS[class] = {
-        left  = { sides.left[1],  sides.left[2],  sides.left[3] },
-        right = { sides.right[1], sides.right[2], sides.right[3] },
-    }
+for class, c in pairs(ns.classBarColors or {}) do
+    CLASS_DEFAULTS[class] = { c[1], c[2], c[3] }
 end
 local POWER_DEFAULTS = {}
 for k, c in pairs(ns.powerColors or {}) do POWER_DEFAULTS[k] = { c[1], c[2], c[3] } end
@@ -53,7 +50,7 @@ local frame
 local panels      = {}   -- onglet index -> frame conteneur
 local tabButtons  = {}
 local lockBtn            -- bouton bascule verrouiller/deverrouiller les cadres
-local swatches    = {}   -- class -> { left, right, leftHex, rightHex, label } (degrade)
+local swatches    = {}   -- class -> { sw, hex, label } (une couleur par classe)
 local singleRows  = {}   -- liste { tex, hex, label?, get } (ressources + PNJ)
 
 -- ----------------------------------------------------------------------------
@@ -106,8 +103,7 @@ end
 -- Meme logique que pour les champs X/Y des positions de cadre.
 local function clearColorFocus()
     for _, row in pairs(swatches) do
-        if row.leftHex  then row.leftHex:ClearFocus()  end
-        if row.rightHex then row.rightHex:ClearFocus() end
+        if row.hex then row.hex:ClearFocus() end
     end
     for _, row in ipairs(singleRows) do
         if row.hex then row.hex:ClearFocus() end
@@ -157,19 +153,15 @@ end
 -- ----------------------------------------------------------------------------
 --  Rafraichissement de l'affichage des pastilles / champs hexa
 -- ----------------------------------------------------------------------------
--- Couleurs de classe (degrade left/right)
+-- Couleurs de classe (une teinte par classe)
 local function refreshSwatches()
     for class, row in pairs(swatches) do
         local c = ns.classBarColors[class]
         if c then
-            row.left.tex:SetColorTexture(c.left[1], c.left[2], c.left[3])
-            row.right.tex:SetColorTexture(c.right[1], c.right[2], c.right[3])
-            row.label:SetTextColor(c.right[1], c.right[2], c.right[3])
-            if not row.leftHex:HasFocus() then
-                row.leftHex:SetText(RGBToHex(c.left[1], c.left[2], c.left[3]))
-            end
-            if not row.rightHex:HasFocus() then
-                row.rightHex:SetText(RGBToHex(c.right[1], c.right[2], c.right[3]))
+            row.sw.tex:SetColorTexture(c[1], c[2], c[3])
+            row.label:SetTextColor(c[1], c[2], c[3])
+            if not row.hex:HasFocus() then
+                row.hex:SetText(RGBToHex(c[1], c[2], c[3]))
             end
         end
     end
@@ -197,12 +189,11 @@ end
 -- ----------------------------------------------------------------------------
 --  Sauvegarde d'une teinte (runtime + DB) puis apercu live
 -- ----------------------------------------------------------------------------
--- Classe : ecrit le cote left/right
-local function saveClassColor(class, side, r, g, b)
-    local col = ns.classBarColors[class][side]
+-- Classe : une couleur unie
+local function saveClassColor(class, r, g, b)
+    local col = ns.classBarColors[class]
     col[1], col[2], col[3] = r, g, b
-    MarcelFramerDB.classBarColors[class] = MarcelFramerDB.classBarColors[class] or {}
-    MarcelFramerDB.classBarColors[class][side] = { r, g, b }
+    MarcelFramerDB.classBarColors[class] = { r, g, b }
     refreshColors()
     ns:RefreshAll()
 end
@@ -222,10 +213,7 @@ end
 local function resetClassColors()
     wipe(MarcelFramerDB.classBarColors)
     for class, def in pairs(CLASS_DEFAULTS) do
-        local entry = ns.classBarColors[class] or {}
-        entry.left  = { def.left[1],  def.left[2],  def.left[3] }
-        entry.right = { def.right[1], def.right[2], def.right[3] }
-        ns.classBarColors[class] = entry
+        ns.classBarColors[class] = { def[1], def[2], def[3] }
     end
     refreshColors()
     ns:RefreshAll()
@@ -369,51 +357,30 @@ end
 -- ============================================================================
 --  Construction des onglets
 -- ============================================================================
--- Onglet 1 : couleurs de classe
+-- Onglet 1 : couleurs de classe (une teinte par classe)
 local function buildClassPanel(panel)
-    local cb = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
-    cb:SetSize(24, 24)
-    cb:SetPoint("TOPLEFT", 4, -6)
-    cb:SetChecked(ns.config.classGradient ~= false)
-    local cblbl = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    cblbl:SetPoint("LEFT", cb, "RIGHT", 2, 0)
-    cblbl:SetText("Vie en degrade (sinon couleur unie = teinte de droite)")
-    cb:SetScript("OnClick", function(self)
-        local on = self:GetChecked() and true or false
-        ns.config.classGradient = on
-        MarcelFramerDB.classGradient = on
-        ns:RefreshAll()
-    end)
+    local intro = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    intro:SetPoint("TOPLEFT", 8, -10)
+    intro:SetWidth(380)
+    intro:SetJustifyH("LEFT")
+    intro:SetText("Couleur de la barre de vie par classe. Le relief (gloss) est ajoute automatiquement.")
 
-    local hF = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    hF:SetPoint("TOPLEFT", 150, -36); hF:SetText("Fonce")
-    local hC = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    hC:SetPoint("TOPLEFT", 285, -36); hC:SetText("Clair")
-
-    local y = -52
+    local y = -40
     for _, class in ipairs(CLASS_ORDER) do
         if ns.classBarColors[class] then
             local lbl = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
             lbl:SetPoint("TOPLEFT", 8, y)
             lbl:SetText((LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[class]) or class)
 
-            local lSw = createSwatch(panel,
-                function() local c = ns.classBarColors[class].left;  return c[1], c[2], c[3] end,
-                function(r, g, b) saveClassColor(class, "left", r, g, b) end)
-            lSw:SetPoint("TOPLEFT", 150, y + 1)
-            local lHex = createHexBox(panel,
-                function(r, g, b) saveClassColor(class, "left", r, g, b) end, refreshColors)
-            lHex:SetPoint("LEFT", lSw, "RIGHT", 8, 0)
+            local sw = createSwatch(panel,
+                function() local c = ns.classBarColors[class]; return c[1], c[2], c[3] end,
+                function(r, g, b) saveClassColor(class, r, g, b) end)
+            sw:SetPoint("TOPLEFT", 180, y + 1)
+            local hex = createHexBox(panel,
+                function(r, g, b) saveClassColor(class, r, g, b) end, refreshColors)
+            hex:SetPoint("LEFT", sw, "RIGHT", 8, 0)
 
-            local rSw = createSwatch(panel,
-                function() local c = ns.classBarColors[class].right; return c[1], c[2], c[3] end,
-                function(r, g, b) saveClassColor(class, "right", r, g, b) end)
-            rSw:SetPoint("TOPLEFT", 285, y + 1)
-            local rHex = createHexBox(panel,
-                function(r, g, b) saveClassColor(class, "right", r, g, b) end, refreshColors)
-            rHex:SetPoint("LEFT", rSw, "RIGHT", 8, 0)
-
-            swatches[class] = { left = lSw, right = rSw, leftHex = lHex, rightHex = rHex, label = lbl }
+            swatches[class] = { sw = sw, hex = hex, label = lbl }
             y = y - 26
         end
     end

@@ -28,22 +28,21 @@ ns.media = {
 -- Graisse utilisee partout (medium / semibold / bold). Defaut : semibold.
 ns.media.font = ns.media.fonts.semibold
 
--- Degrade explicite par classe pour la barre de vie des JOUEURS (r,g,b en 0-1).
--- Utilise quand barStyle == "gradient" et classColor ~= false ; left = bord fonce
--- (0%), right = bord clair (100%). Mettre a nil pour revenir au degrade derive.
--- Ces valeurs sont prises telles quelles (pas d'adoucissement colorAdjust).
+-- Couleur de la barre de vie des JOUEURS : UNE teinte par classe (r,g,b en 0-1).
+-- Le relief vient du gloss vertical (plus de degrade 2 teintes). Prise telle
+-- quelle (pas d'adoucissement colorAdjust). Editable via /mf config (onglet Classes).
 ns.classBarColors = {
-    WARRIOR     = { left = {0.431, 0.267, 0.165}, right = {0.596, 0.431, 0.224} }, -- 6E442A -> 986E39
-    PALADIN     = { left = {0.957, 0.475, 0.635}, right = {0.882, 0.494, 0.596} }, -- F479A2 -> E17E98
-    DEATHKNIGHT = { left = {0.455, 0.059, 0.122}, right = {0.616, 0.114, 0.220} }, -- 740F1F -> 9D1D38
-    MONK        = { left = {0.000, 0.431, 0.314}, right = {0.000, 0.690, 0.522} }, -- 006E50 -> 00B085
-    PRIEST      = { left = {0.843, 0.808, 0.784}, right = {1.000, 1.000, 1.000} }, -- D7CEC8 -> FFFFFF
-    DRUID       = { left = {0.769, 0.337, 0.000}, right = {0.808, 0.478, 0.196} }, -- C45600 -> CE7A32
-    SHAMAN      = { left = {0.000, 0.255, 0.647}, right = {0.000, 0.369, 0.733} }, -- 0041A5 -> 005EBB
-    MAGE        = { left = {0.075, 0.475, 0.584}, right = {0.216, 0.682, 0.808} }, -- 137995 -> 37AECE
-    WARLOCK     = { left = {0.267, 0.267, 0.667}, right = {0.463, 0.467, 0.820} }, -- 4444AA -> 7677D1
-    HUNTER      = { left = {0.392, 0.506, 0.290}, right = {0.557, 0.714, 0.412} }, -- 64814A -> 8EB669
-    ROGUE       = { left = {0.780, 0.714, 0.231}, right = {0.875, 0.808, 0.400} }, -- C7B63B -> DFCE66
+    WARRIOR     = {0.596, 0.431, 0.224}, -- 986E39
+    PALADIN     = {0.882, 0.494, 0.596}, -- E17E98
+    DEATHKNIGHT = {0.616, 0.114, 0.220}, -- 9D1D38
+    MONK        = {0.000, 0.690, 0.522}, -- 00B085
+    PRIEST      = {1.000, 1.000, 1.000}, -- FFFFFF
+    DRUID       = {0.808, 0.478, 0.196}, -- CE7A32
+    SHAMAN      = {0.000, 0.369, 0.733}, -- 005EBB
+    MAGE        = {0.216, 0.682, 0.808}, -- 37AECE
+    WARLOCK     = {0.463, 0.467, 0.820}, -- 7677D1
+    HUNTER      = {0.557, 0.714, 0.412}, -- 8EB669
+    ROGUE       = {0.875, 0.808, 0.400}, -- DFCE66
 }
 
 -- Couleurs des barres de RESSOURCE, par type de pouvoir (jeton renvoye par
@@ -107,11 +106,6 @@ ns.config = {
     -- Style des barres de ressource / cast / PNJ : "gradient" (degrade derive),
     -- "flat" (aplat uni) ou "blizzard" (texture brillante d'origine).
     barStyle = "gradient",
-
-    -- Barres de vie des joueurs : true = degrade 2 teintes (left->right de
-    -- ns.classBarColors) ; false = couleur unie (la teinte "right"). Reglable
-    -- aussi via la fenetre /mf config.
-    classGradient = true,
 
     -- Reglage du degrade (style linear-gradient, derive de la couleur de classe).
     -- dark/light = facteurs de LUMINOSITE (on reste dans la teinte, pas de blanc) :

@@ -213,13 +213,11 @@ end
 function ns:ApplySavedColors()
     local db = MarcelFramerDB
     if db.barStyle then ns.config.barStyle = db.barStyle end
-    if db.classGradient ~= nil then ns.config.classGradient = db.classGradient end
     if db.classBarColors then
-        for class, sides in pairs(db.classBarColors) do
-            local entry = ns.classBarColors[class] or {}
-            if sides.left then entry.left = { sides.left[1], sides.left[2], sides.left[3] } end
-            if sides.right then entry.right = { sides.right[1], sides.right[2], sides.right[3] } end
-            ns.classBarColors[class] = entry
+        for class, c in pairs(db.classBarColors) do
+            -- Compat ancien format {left,right} : on conserve la teinte "right".
+            local rgb = c.right or c
+            if rgb[1] then ns.classBarColors[class] = { rgb[1], rgb[2], rgb[3] } end
         end
     end
     if db.powerColors then
