@@ -720,11 +720,20 @@ local function CastBar_Reset(cb)
     cb:Hide()
 end
 
+-- Colore la barre de cast selon l'interruptibilite (ns.castColors). Quand la
+-- distinction est desactivee, tout sort prend la couleur "interruptible". Passe
+-- par SetBarColor pour respecter le style global (gradient / flat / blizzard).
 local function CastBar_Color(cb)
-    if cb.notInterruptible then
-        cb:SetStatusBarColor(0.6, 0.6, 0.6)
+    local cc = ns.castColors or {}
+    local distinguish = cc.distinguish ~= false
+    local key = (distinguish and cb.notInterruptible) and "notInterruptible" or "interruptible"
+    local c = cc[key]
+    if c then
+        SetBarColor(cb, c[1], c[2], c[3])
+    elseif cb.notInterruptible and distinguish then
+        SetBarColor(cb, 0.6, 0.6, 0.6)
     else
-        cb:SetStatusBarColor(0.2, 0.5, 1.0)
+        SetBarColor(cb, 0.937, 0.788, 0.341)
     end
 end
 

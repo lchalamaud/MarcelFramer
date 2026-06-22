@@ -230,6 +230,16 @@ function ns:ApplySavedColors()
             ns.reactionColors[cat] = { rgb[1], rgb[2], rgb[3] }
         end
     end
+    if db.castColors and ns.castColors then
+        local c = db.castColors
+        if c.distinguish ~= nil then ns.castColors.distinguish = c.distinguish end
+        if c.interruptible then
+            ns.castColors.interruptible = { c.interruptible[1], c.interruptible[2], c.interruptible[3] }
+        end
+        if c.notInterruptible then
+            ns.castColors.notInterruptible = { c.notInterruptible[1], c.notInterruptible[2], c.notInterruptible[3] }
+        end
+    end
 end
 
 -- Re-applique couleurs de vie + nom sur toutes les frames (apercu live des reglages)
@@ -241,6 +251,7 @@ function ns:RefreshAll()
             E.UpdateHealth(frame)
             E.UpdatePower(frame)
             E.UpdateName(frame)
+            if frame.castBar then E.CastBarCheck(frame) end
         end
     end
 end
@@ -368,6 +379,7 @@ f:SetScript("OnEvent", function(self, event)
         MarcelFramerDB.classBarColors = MarcelFramerDB.classBarColors or {}
         MarcelFramerDB.powerColors = MarcelFramerDB.powerColors or {}
         MarcelFramerDB.reactionColors = MarcelFramerDB.reactionColors or {}
+        MarcelFramerDB.castColors = MarcelFramerDB.castColors or {}
         MarcelFramerDB.sizes = MarcelFramerDB.sizes or {}
         MarcelFramerDB.castbars = MarcelFramerDB.castbars or {}
         ns:ApplySavedColors()

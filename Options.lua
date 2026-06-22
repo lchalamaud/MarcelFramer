@@ -5,6 +5,7 @@ local addonName, ns = ...
 --    1. Classes            : couleur de la barre de vie par classe (une teinte)
 --    2. Ressources & PNJ   : couleurs des ressources + couleurs de reaction PNJ
 --    3. Cadres             : tailles et positions des cadres
+--    4. Barre de cast      : distinction (non) interruptible + couleurs
 --  API pure : frame maison + ColorPickerFrame Blizzard. Chaque teinte est
 --  editable via une pastille (color picker) OU un champ hexa. Sauvegarde dans
 --  MarcelFramerDB ; apercu live via ns:RefreshAll().
@@ -45,6 +46,11 @@ local POWER_DEFAULTS = {}
 for k, c in pairs(ns.powerColors or {}) do POWER_DEFAULTS[k] = { c[1], c[2], c[3] } end
 local REACTION_DEFAULTS = {}
 for k, c in pairs(ns.reactionColors or {}) do REACTION_DEFAULTS[k] = { c[1], c[2], c[3] } end
+local CAST_DEFAULTS = {
+    distinguish      = (ns.castColors == nil) or (ns.castColors.distinguish ~= false),
+    interruptible    = { unpack(ns.castColors and ns.castColors.interruptible    or { 0.937, 0.788, 0.341 }) },
+    notInterruptible = { unpack(ns.castColors and ns.castColors.notInterruptible or { 0.60, 0.60, 0.60 }) },
+}
 
 local frame
 local panels      = {}   -- onglet index -> frame conteneur
@@ -225,6 +231,52 @@ local function resetSingleColors()
     for k, def in pairs(POWER_DEFAULTS)    do ns.powerColors[k]    = { def[1], def[2], def[3] } end
     for k, def in pairs(REACTION_DEFAULTS) do ns.reactionColors[k] = { def[1], def[2], def[3] } end
     refreshColors()
+    ns:RefreshAll()
+end
+
+-- ----------------------------------------------------------------------------
+--  Barre de cast : distinction (non) interruptible + couleurs (onglet dedie)
+-- ----------------------------------------------------------------------------
+-- Widgets de l'onglet, renseignes a la construction (refreshCastState les lit).
+local castState = { check = nil, notInterRow = nil }
+
+-- Active/grise la ligne "non interruptible" selon l'etat du toggle.
+local function setRowEnabled(row, enabled)
+    if not row then return end
+    local a = enabled and 1 or 0.35
+    if row.sw then
+        row.sw:SetEnabled(enabled)
+        row.sw:SetAlpha(a)
+    end
+    if row.hex then
+        if row.hex.SetEnabled then row.hex:SetEnabled(enabled) end
+        row.hex:EnableMouse(enabled)
+        row.hex:SetAlpha(a)
+    end
+    if row.label then row.label:SetAlpha(a) end
+end
+
+-- Reflete l'etat du toggle sur la case + le grisage de la ligne "non interruptible".
+local function refreshCastState()
+    local on = ns.castColors.distinguish ~= false
+    if castState.check then castState.check:SetChecked(on) end
+    setRowEnabled(castState.notInterRow, on)
+end
+
+local function saveCastDistinguish(on)
+    ns.castColors.distinguish = on
+    MarcelFramerDB.castColors.distinguish = on
+    refreshCastState()
+    ns:RefreshAll()
+end
+
+local function resetCastColors()
+    wipe(MarcelFramerDB.castColors)
+    ns.castColors.distinguish      = CAST_DEFAULTS.distinguish
+    ns.castColors.interruptible    = { unpack(CAST_DEFAULTS.interruptible) }
+    ns.castColors.notInterruptible = { unpack(CAST_DEFAULTS.notInterruptible) }
+    refreshColors()
+    refreshCastState()
     ns:RefreshAll()
 end
 
@@ -416,7 +468,9 @@ local function addSingleRow(panel, x, y, labelText, runtimeTbl, dbName, key)
     local hex = createHexBox(panel, apply, refreshColors)
     hex:SetPoint("LEFT", sw, "RIGHT", 8, 0)
 
-    singleRows[#singleRows + 1] = { tex = sw.tex, hex = hex, label = lbl, get = get }
+    local row = { tex = sw.tex, sw = sw, hex = hex, label = lbl, get = get }
+    singleRows[#singleRows + 1] = row
+    return row
 end
 
 -- Onglet 2 : couleurs de ressource + couleurs de reaction PNJ
@@ -548,6 +602,47 @@ local function buildFramesPanel(panel)
     end)
 end
 
+-- Onglet 4 : barre de cast (distinction interruptible + couleurs)
+local function buildCastPanel(panel)
+    local intro = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    intro:SetPoint("TOPLEFT", 8, -10)
+    intro:SetWidth(390)
+    intro:SetJustifyH("LEFT")
+    intro:SetText("Couleur de la barre d'incantation selon l'interruptibilite du sort. "
+        .. "L'etat bascule en direct : la barre se recolore meme en plein cast.")
+
+    -- Toggle : distinguer ou non les sorts (non) interruptibles.
+    local check = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+    check:SetSize(24, 24)
+    check:SetPoint("TOPLEFT", 6, -52)
+    local checkLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    checkLabel:SetPoint("LEFT", check, "RIGHT", 2, 0)
+    checkLabel:SetText("Distinguer interruptible / non interruptible")
+    check:SetScript("OnClick", function(self)
+        saveCastDistinguish(self:GetChecked() and true or false)
+    end)
+    castState.check = check
+
+    local hint = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    hint:SetPoint("TOPLEFT", 30, -76)
+    hint:SetWidth(360)
+    hint:SetJustifyH("LEFT")
+    hint:SetText("Decoche : tous les sorts utilisent la couleur \"Interruptible\".")
+
+    -- Couleurs (label + pastille + champ hexa, comme les autres onglets).
+    addSingleRow(panel, 8, -108, "Interruptible", ns.castColors, "castColors", "interruptible")
+    castState.notInterRow =
+        addSingleRow(panel, 8, -134, "Non interruptible", ns.castColors, "castColors", "notInterruptible")
+
+    local reset = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    reset:SetSize(170, 22)
+    reset:SetPoint("BOTTOMLEFT", 4, 4)
+    reset:SetText("Reinit. barre de cast")
+    reset:SetScript("OnClick", resetCastColors)
+
+    refreshCastState()
+end
+
 -- ----------------------------------------------------------------------------
 --  Onglets : affichage / bascule
 -- ----------------------------------------------------------------------------
@@ -608,6 +703,7 @@ local function build()
     makeMenuButton("Classes", 1)
     makeMenuButton("Ressources & PNJ", 2)
     makeMenuButton("Cadres", 3)
+    makeMenuButton("Barre de cast", 4)
 
     local divider = frame:CreateTexture(nil, "ARTWORK")
     divider:SetColorTexture(1, 1, 1, 0.12)
@@ -619,9 +715,11 @@ local function build()
     buildClassPanel(makePanel())
     buildResourcePanel(makePanel())
     buildFramesPanel(makePanel())
+    buildCastPanel(makePanel())
 
     refreshColors()
     refreshSizeSliders()
+    refreshCastState()
     updateLockButton()
     showTab(1)
 
@@ -638,6 +736,7 @@ function ns.Options.Toggle()
     else
         refreshColors()
         refreshSizeSliders()
+        refreshCastState()
         updateLockButton()
         frame:Show()
     end

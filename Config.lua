@@ -83,6 +83,21 @@ ns.reactionColors = {
     friendly   = {0.306, 0.824, 0.341}, -- 4ED257
 }
 
+-- Couleurs de la barre d'incantation, selon l'interruptibilite du sort.
+-- WoW expose `notInterruptible` (8e retour de UnitCastingInfo/UnitChannelInfo) et
+-- bascule en direct via UNIT_SPELLCAST_(NOT_)INTERRUPTIBLE : la barre se recolore
+-- meme si l'etat change en plein cast.
+--   distinguish = true  : deux couleurs distinctes (interruptible vs non).
+--   distinguish = false : une seule couleur (`interruptible`) pour tous les sorts.
+-- Couleur unie {r,g,b} en 0-1 ; le style global (barStyle) derive le degrade.
+-- Convention frequente (reprise ici) : jaune = interruptible, gris = non.
+-- Editable aussi via la fenetre /mf config (onglet "Barre de cast").
+ns.castColors = {
+    distinguish      = true,
+    interruptible    = {0.937, 0.788, 0.341}, -- EFC957 (jaune)
+    notInterruptible = {0.60, 0.60, 0.60},    -- 999999 (gris)
+}
+
 -- Mappe une valeur de UnitReaction (1-8) vers une cle de ns.reactionColors.
 function ns.ReactionCategory(reaction)
     if not reaction then return nil end
