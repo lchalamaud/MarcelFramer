@@ -93,14 +93,16 @@ local function AdjustColor(r, g, b)
     return r * bri, g * bri, b * bri
 end
 
--- Paire de couleurs {left={r,g,b}, right={r,g,b}} choisie a la main pour un
--- joueur de classe connue (table ns.classBarColors), ou nil. Pas de gate de style.
+-- Couleur unie (r,g,b) choisie a la main pour un joueur de classe connue
+-- (ns.classBarColors), ou nil. Pas de gate de style.
 function Elements.GetClassColors(unit, cfg)
     if cfg and cfg.classColor == false then return nil end
     if not ns.classBarColors then return nil end
     if not UnitIsPlayer(unit) then return nil end
     local _, class = UnitClass(unit)
-    return class and ns.classBarColors[class] or nil
+    local c = class and ns.classBarColors[class]
+    if c then return c[1], c[2], c[3] end
+    return nil
 end
 
 function Elements.GetUnitColor(unit, cfg)
@@ -829,16 +831,10 @@ function Elements.UpdateHealth(frame)
     local bar = frame.health
     bar:SetMinMaxValues(0, max > 0 and max or 1)
     bar:SetValue(cur)
-    local cc = Elements.GetClassColors(unit, frame.config)
-    if cc then
-        if ns.config.classGradient ~= false then
-            PaintBar(bar, cc.left[1], cc.left[2], cc.left[3], cc.right[1], cc.right[2], cc.right[3])
-        else
-            PaintBar(bar, cc.right[1], cc.right[2], cc.right[3], cc.right[1], cc.right[2], cc.right[3])
-        end
-    else
-        SetBarColor(bar, Elements.GetUnitColor(unit, frame.config))
-    end
+    -- Couleur unie (classe ou reaction/perso) ; le relief vient du gloss vertical.
+    local r, g, b = Elements.GetClassColors(unit, frame.config)
+    if not r then r, g, b = Elements.GetUnitColor(unit, frame.config) end
+    PaintBar(bar, r, g, b, r, g, b)
 
     local cfg = frame.config
     if frame.richText then
@@ -951,12 +947,9 @@ function Elements.UpdateName(frame)
         end
     end
     frame.nameText:SetText(prefix .. nameStr)
-    local cc = Elements.GetClassColors(unit, cfg)
-    if cc then
-        frame.nameText:SetTextColor(cc.right[1], cc.right[2], cc.right[3])
-    else
-        frame.nameText:SetTextColor(Elements.GetUnitColor(unit, cfg))
-    end
+    local r, g, b = Elements.GetClassColors(unit, cfg)
+    if not r then r, g, b = Elements.GetUnitColor(unit, cfg) end
+    frame.nameText:SetTextColor(r, g, b)
 end
 
 -- Couleurs de bordure des debuffs par type (auto-suffisant : le global
