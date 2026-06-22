@@ -177,7 +177,7 @@ ns.config = {
         -- Overrides libres : combatAtlas = "NomDAtlasBlizzard", ou
         --   combatTexture = "Interface\\...\\Truc" (+ combatTexCoord = {l,r,h,b}).
         -- combatColor = {r,g,b} : teinte l'icone (defaut du preset "combat" = rouge doux).
-        showBuffs     = true,
+        showBuffs     = false,
         showDebuffs   = true,
         numAuras      = 6,
         auraSize      = 20,
@@ -191,8 +191,8 @@ ns.config = {
         --   growth   : sens de la rangee — "RIGHT" | "LEFT" | "UP" | "DOWN"
         -- Champs absents => valeurs par defaut (buffs sous le cadre, debuffs
         -- au-dessus). Modifier puis /reload pour appliquer.
-        buffAnchor    = { point = "TOPLEFT",    relTo = "castbar", relPoint = "BOTTOMLEFT", x = 0, y = -3, growth = "RIGHT" },
-        debuffAnchor  = { point = "BOTTOMLEFT", relTo = "frame",   relPoint = "TOPLEFT",    x = 0, y = 3,  growth = "RIGHT" },
+        buffAnchor    = { point = "BOTTOMLEFT", relTo = "castbar", relPoint = "TOPLEFT",    x = 1, y = 1,  growth = "RIGHT" },
+        debuffAnchor  = { point = "TOPLEFT",    relTo = "frame",   relPoint = "BOTTOMLEFT", x = 1, y = -1, growth = "LEFT"  },
         fontSize      = 12,
     },
     target = {
@@ -217,8 +217,8 @@ ns.config = {
         numAuras      = 6,
         auraSize      = 20,
         -- Ancrage des auras (cf. doc du cadre `player`).
-        buffAnchor    = { point = "TOPLEFT",    relTo = "castbar", relPoint = "BOTTOMLEFT", x = 0, y = -3, growth = "RIGHT" },
-        debuffAnchor  = { point = "BOTTOMLEFT", relTo = "frame",   relPoint = "TOPLEFT",    x = 0, y = 3,  growth = "RIGHT" },
+        buffAnchor    = { point = "BOTTOMLEFT", relTo = "frame",   relPoint = "TOPLEFT",    x = 1, y = 1,  growth = "RIGHT" },
+        debuffAnchor  = { point = "TOPLEFT",    relTo = "castbar", relPoint = "BOTTOMLEFT", x = 1, y = -4, growth = "RIGHT" },
         fontSize      = 12,
     },
     focus = {
@@ -238,13 +238,13 @@ ns.config = {
         castHeight    = 18,
         showCombat    = true,              -- icone de combat (coin haut)
         combatSize    = 18,
-        showBuffs     = true,
+        showBuffs     = false,
         showDebuffs   = true,
         numAuras      = 6,
         auraSize      = 20,
         -- Ancrage des auras (cf. doc du cadre `player`).
-        buffAnchor    = { point = "TOPLEFT",    relTo = "castbar", relPoint = "BOTTOMLEFT", x = 0, y = -3, growth = "RIGHT" },
-        debuffAnchor  = { point = "BOTTOMLEFT", relTo = "frame",   relPoint = "TOPLEFT",    x = 0, y = 3,  growth = "RIGHT" },
+        buffAnchor    = { point = "BOTTOMLEFT", relTo = "castbar", relPoint = "TOPLEFT",    x = 0, y = -3, growth = "RIGHT" },
+        debuffAnchor  = { point = "TOPLEFT",    relTo = "castbar", relPoint = "BOTTOMLEFT", x = 1, y = -4, growth = "RIGHT" },
         fontSize      = 12,
     },
     targettarget = {
