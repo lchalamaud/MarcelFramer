@@ -265,6 +265,15 @@ local function refreshSizeSliders()
     for key, btn in pairs(sizeState.selButtons) do
         if key == sizeState.currentKey then btn:LockHighlight() else btn:UnlockHighlight() end
     end
+    -- Case "Barre de cast" : active seulement pour joueur / cible
+    if sizeState.castCheck then
+        local key = sizeState.currentKey
+        local applicable = (key == "player" or key == "target")
+        sizeState.castCheck:SetEnabled(applicable)
+        local g = applicable and 1 or 0.5
+        sizeState.castLabel:SetTextColor(g, g, g)
+        sizeState.castCheck:SetChecked(applicable and (ns.config[key].showCastBar ~= false))
+    end
     -- Champs de position X/Y (depuis la position courante du cadre)
     if sizeState.posX then
         local p = ns:GetPosition(sizeState.currentKey)
@@ -498,6 +507,36 @@ local function buildFramesPanel(panel)
     note:SetWidth(280)
     note:SetJustifyH("LEFT")
     note:SetText("Ajuste hors combat (differe pendant le combat). |cffffff00/mf reset|r remet les positions par defaut.")
+
+    -- Section "Barre de cast" (colonne de droite) : activable pour joueur / cible
+    -- uniquement. Les autres cadres n'ont pas de barre de cast (case grisee).
+    local cbTitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    cbTitle:SetPoint("TOPLEFT", 260, -8)
+    cbTitle:SetText("Barre de cast")
+
+    local cbHint = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    cbHint:SetPoint("TOPLEFT", 260, -28)
+    cbHint:SetWidth(150)
+    cbHint:SetJustifyH("LEFT")
+    cbHint:SetText("Joueur et cible uniquement")
+
+    local cast = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+    cast:SetSize(24, 24)
+    cast:SetPoint("TOPLEFT", 258, -46)
+    local castLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    castLabel:SetPoint("LEFT", cast, "RIGHT", 2, 0)
+    castLabel:SetText("Afficher")
+    cast:SetScript("OnClick", function(self)
+        local key = sizeState.currentKey
+        if key ~= "player" and key ~= "target" then
+            self:SetChecked(false)
+            return
+        end
+        ns:SetCastBarEnabled(key, self:GetChecked())
+    end)
+    sizeState.castCheck = cast
+    sizeState.castLabel = castLabel
+    refreshSizeSliders()   -- reflete l'etat de la case pour le cadre courant
 
     local resetSize = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     resetSize:SetSize(150, 22)
