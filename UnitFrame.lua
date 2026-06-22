@@ -57,7 +57,10 @@ local function CreateUnit(unit, key)
     frame:SetAttribute("*type2", "togglemenu")   -- menu d'unite Blizzard natif (securise, OK combat)
 
     Elements.BuildVisuals(frame)
-    if cfg.showCastBar then Elements.CreateCastBar(frame) end
+    -- Barre de cast : reservee a player / target. On la cree toujours pour ces
+    -- deux cadres (meme si desactivee) afin que la bascule via /mf config soit
+    -- live, sans /reload. Son etat actif derive de cfg.showCastBar.
+    if key == "player" or key == "target" then Elements.CreateCastBar(frame) end
     Elements.CreateAuras(frame)
     Elements.EnableTooltip(frame)
     ns:ApplyPosition(frame, key)

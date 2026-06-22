@@ -621,6 +621,23 @@ function Elements.BuildVisuals(frame)
     if cfg.showCombat then BuildCombat(frame) end
 end
 
+-- (Re)ancre la 1re icone de buff : sous la barre de cast si elle est active,
+-- sinon directement sous le cadre. Rejouable a chaud quand on bascule la barre
+-- de cast (evite un trou vide a l'emplacement de la barre masquee).
+function Elements.AnchorBuffs(frame)
+    local icons = frame.buffIcons
+    if not icons or not icons[1] then return end
+    local cb = frame.castBar
+    local below = (cb and cb.enabled ~= false) and cb or frame
+    local btn = icons[1]
+    btn:ClearAllPoints()
+    if frame.config.mirror then
+        btn:SetPoint("TOPRIGHT", below, "BOTTOMRIGHT", 0, -3)
+    else
+        btn:SetPoint("TOPLEFT", below, "BOTTOMLEFT", 0, -3)
+    end
+end
+
 -- Construit les rangees de buffs/debuffs (sous le cadre / au-dessus, en miroir si besoin)
 function Elements.CreateAuras(frame)
     local cfg = frame.config
@@ -628,21 +645,18 @@ function Elements.CreateAuras(frame)
     if max <= 0 then return end
     local size = cfg.auraSize or 18
     local mirror = cfg.mirror
-    local below = frame.castBar or frame   -- buffs sous la barre de cast si presente
 
     if cfg.showBuffs then
         frame.buffIcons = {}
         for i = 1, max do
             local btn = CreateAuraIcon(frame, size)
-            if i == 1 then
-                if mirror then btn:SetPoint("TOPRIGHT", below, "BOTTOMRIGHT", 0, -3)
-                else btn:SetPoint("TOPLEFT", below, "BOTTOMLEFT", 0, -3) end
-            else
+            if i > 1 then
                 if mirror then btn:SetPoint("RIGHT", frame.buffIcons[i - 1], "LEFT", -3, 0)
                 else btn:SetPoint("LEFT", frame.buffIcons[i - 1], "RIGHT", 3, 0) end
             end
             frame.buffIcons[i] = btn
         end
+        Elements.AnchorBuffs(frame)   -- ancre la 1re icone (sous la barre de cast si active)
     end
 
     if cfg.showDebuffs then
@@ -717,6 +731,7 @@ end
 function Elements.CastBarCheck(frame)
     local cb = frame.castBar
     if not cb then return end
+    if cb.enabled == false then CastBar_Reset(cb); return end
     local unit = frame.unit
     if not unit or not UnitExists(unit) then CastBar_Reset(cb); return end
 
@@ -808,6 +823,9 @@ function Elements.CreateCastBar(frame)
     cb.text = text
 
     cb.owner = frame
+    -- Etat actif : derive de la config (defaut = affichee). Une barre desactivee
+    -- reste creee mais ne s'affiche jamais (CastBarCheck court-circuite).
+    cb.enabled = cfg.showCastBar ~= false
     cb:Hide()
     cb:SetScript("OnUpdate", CastBar_OnUpdate)
     cb:SetScript("OnEvent", CastBar_OnEvent)

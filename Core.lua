@@ -297,6 +297,45 @@ function ns:ResetSizes()
 end
 
 -- ----------------------------------------------------------------------------
+--  Barre de cast (player / target uniquement) : preference + bascule live
+-- ----------------------------------------------------------------------------
+-- Fusionne les preferences sauvegardees dans ns.config (AVANT creation des
+-- cadres, car CreateCastBar lit cfg.showCastBar a la creation).
+function ns:ApplySavedCastBars()
+    local saved = MarcelFramerDB and MarcelFramerDB.castbars
+    if not saved then return end
+    for key, v in pairs(saved) do
+        if ns.config[key] then ns.config[key].showCastBar = v end
+    end
+end
+
+-- Active/desactive a chaud la barre de cast d'un cadre. Non securisee (la barre
+-- est un StatusBar non protege) : sans restriction de combat. Re-ancre les buffs
+-- pour ne pas laisser de trou a l'emplacement de la barre masquee.
+function ns:SetCastBarEnabled(key, enabled)
+    if key ~= "player" and key ~= "target" then return end
+    enabled = enabled and true or false
+    if ns.config[key] then ns.config[key].showCastBar = enabled end
+    MarcelFramerDB.castbars = MarcelFramerDB.castbars or {}
+    MarcelFramerDB.castbars[key] = enabled
+
+    local data = ns.registry[key]
+    if not data then return end
+    local frame = data.frame
+    local cb = frame.castBar
+    if cb then
+        cb.enabled = enabled
+        if enabled then
+            ns.Elements.CastBarCheck(frame)   -- reaffiche si une incantation est en cours
+        else
+            cb.casting, cb.channeling = nil, nil
+            cb:Hide()
+        end
+    end
+    if ns.Elements.AnchorBuffs then ns.Elements.AnchorBuffs(frame) end
+end
+
+-- ----------------------------------------------------------------------------
 --  Commandes slash
 -- ----------------------------------------------------------------------------
 SLASH_MARCELFRAMER1 = "/marcelframer"
@@ -330,8 +369,10 @@ f:SetScript("OnEvent", function(self, event)
         MarcelFramerDB.powerColors = MarcelFramerDB.powerColors or {}
         MarcelFramerDB.reactionColors = MarcelFramerDB.reactionColors or {}
         MarcelFramerDB.sizes = MarcelFramerDB.sizes or {}
+        MarcelFramerDB.castbars = MarcelFramerDB.castbars or {}
         ns:ApplySavedColors()
         ns:ApplySavedSizes()
+        ns:ApplySavedCastBars()
         ns:HideBlizzard()
         if ns.UnitFrame and ns.UnitFrame.CreateAll then ns.UnitFrame.CreateAll() end
     elseif event == "PLAYER_REGEN_ENABLED" then
