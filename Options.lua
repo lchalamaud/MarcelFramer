@@ -646,6 +646,312 @@ local function buildCastPanel(panel)
     refreshCastState()
 end
 
+-- ============================================================================
+--  Section AURAS (onglet "Auras") : affichage (on/off) + ancrage par type
+--  Reglages PAR CADRE et PAR TYPE (buffs / debuffs). La position passe par un
+--  "Placement" (cote + alignement) + un "Sens" de croissance + un decalage X/Y.
+--  Sauvegarde via ns:SetAuraShown / ns:SetAuraAnchor (DB + apercu live).
+-- ============================================================================
+local AURA_FRAME_ORDER = {
+    { key = "player",       label = "Joueur"       },
+    { key = "target",       label = "Cible"        },
+    { key = "focus",        label = "Focalisation" },
+    { key = "pet",          label = "Familier"     },
+    { key = "targettarget", label = "Cible-cible"  },
+}
+
+-- Presets de placement : chaque entree fixe le coin de la 1re icone (point) et le
+-- coin du cadre/barre de cast auquel on l'accroche (relPoint). Le "Sens" (growth)
+-- et le decalage X/Y sont des reglages independants.
+local PLACEMENTS = {
+    { key = "below_left",  label = "Dessous - gauche", point = "TOPLEFT",     relPoint = "BOTTOMLEFT"  },
+    { key = "below_right", label = "Dessous - droite", point = "TOPRIGHT",    relPoint = "BOTTOMRIGHT" },
+    { key = "above_left",  label = "Dessus - gauche",  point = "BOTTOMLEFT",  relPoint = "TOPLEFT"     },
+    { key = "above_right", label = "Dessus - droite",  point = "BOTTOMRIGHT", relPoint = "TOPRIGHT"    },
+    { key = "left_top",    label = "Gauche - haut",    point = "TOPRIGHT",    relPoint = "TOPLEFT"     },
+    { key = "left_bottom", label = "Gauche - bas",     point = "BOTTOMRIGHT", relPoint = "BOTTOMLEFT"  },
+    { key = "right_top",   label = "Droite - haut",    point = "TOPLEFT",     relPoint = "TOPRIGHT"    },
+    { key = "right_bottom",label = "Droite - bas",     point = "BOTTOMLEFT",  relPoint = "BOTTOMRIGHT" },
+}
+local PLACEMENT_BY_KEY     = {}   -- placementKey -> entry
+local PLACEMENT_BY_CORNERS = {}   -- "point|relPoint" -> entry
+for _, p in ipairs(PLACEMENTS) do
+    PLACEMENT_BY_KEY[p.key] = p
+    PLACEMENT_BY_CORNERS[p.point .. "|" .. p.relPoint] = p
+end
+
+local GROWTH_OPTIONS = {
+    { key = "RIGHT", label = "Droite" },
+    { key = "LEFT",  label = "Gauche" },
+    { key = "DOWN",  label = "Bas"    },
+    { key = "UP",    label = "Haut"   },
+}
+
+local auraState = { currentKey = nil, keys = {}, selButtons = {}, buffs = nil, debuffs = nil }
+
+-- Liste deroulante generique (UIDropDownMenu). onSelect(key) au choix.
+local function makeDropdown(name, parent, width, options, onSelect)
+    local dd = CreateFrame("Frame", name, parent, "UIDropDownMenuTemplate")
+    dd.options = options
+    UIDropDownMenu_SetWidth(dd, width)
+    UIDropDownMenu_Initialize(dd, function(_, level)
+        for _, opt in ipairs(options) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text  = opt.label
+            info.value = opt.key
+            info.checked = (UIDropDownMenu_GetSelectedValue(dd) == opt.key)
+            info.func = function()
+                UIDropDownMenu_SetSelectedValue(dd, opt.key)
+                UIDropDownMenu_SetText(dd, opt.label)
+                if onSelect then onSelect(opt.key) end
+            end
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+    return dd
+end
+
+-- Reflete une valeur courante dans une liste. key = nil + fallback => libelle libre
+-- (cas d'un ancrage "personnalise" via Config.lua qui ne matche aucun preset).
+local function setDropdown(dd, key, fallback)
+    UIDropDownMenu_SetSelectedValue(dd, key)
+    local label = fallback or tostring(key)
+    if key ~= nil then
+        for _, opt in ipairs(dd.options) do
+            if opt.key == key then label = opt.label break end
+        end
+    end
+    UIDropDownMenu_SetText(dd, label)
+end
+
+-- Remet une colonne (buffs ou debuffs) a l'etat du cadre courant.
+local function refreshAuraColumn(kind)
+    local W = auraState[kind]
+    local key = auraState.currentKey
+    local cfg = key and ns.config[key]
+    if not W or not W.show or not cfg then return end
+
+    local shown
+    if kind == "buffs" then shown = (cfg.showBuffs ~= false) else shown = (cfg.showDebuffs ~= false) end
+    W.show:SetChecked(shown)
+
+    local a = ns.Elements.GetResolvedAuraAnchor(cfg, kind)
+    local entry = PLACEMENT_BY_CORNERS[(a.point or "") .. "|" .. (a.relPoint or "")]
+    if entry then setDropdown(W.placement, entry.key) else setDropdown(W.placement, nil, "Personnalise") end
+    setDropdown(W.growth, a.growth or "RIGHT")
+
+    if W.x and not W.x:HasFocus() then W.x:SetText(tostring(a.x or 0)) end
+    if W.y and not W.y:HasFocus() then W.y:SetText(tostring(a.y or 0)) end
+
+    -- Case "Suivre barre de cast" : la barre etant SOUS le cadre, la suivre n'a de
+    -- sens que pour un placement "Dessous" (rangee qui pend dessous) et un cadre
+    -- dote d'une barre (joueur / cible / focalisation). Grisee sinon, avec un
+    -- tooltip explicatif via le "cover" (cf. buildAuraColumn).
+    if W.cast then
+        local hasCastBar = (key == "player" or key == "target" or key == "focus")
+        local hangsBelow = (a.point or ""):sub(1, 3) == "TOP" and (a.relPoint or ""):sub(1, 6) == "BOTTOM"
+        local applicable = hasCastBar and hangsBelow
+        W.cast:SetEnabled(applicable)
+        if W.castLabel then local g = applicable and 1 or 0.5; W.castLabel:SetTextColor(g, g, g) end
+        W.cast:SetChecked(applicable and (a.relTo == "castbar"))
+        if W.castCover then
+            if applicable then
+                W.castCover:Hide()
+            else
+                W.castCover.reason = (not hasCastBar)
+                    and "Indisponible : ce cadre n'a pas de barre de cast."
+                    or  "Indisponible avec ce placement : la barre de cast est sous le cadre, "
+                        .. "le suivi ne vaut que pour un placement \194\171 Dessous \194\187."
+                W.castCover:Show()
+            end
+        end
+    end
+end
+
+local function refreshAurasPanel()
+    if not auraState.currentKey then return end
+    for key, btn in pairs(auraState.selButtons) do
+        if key == auraState.currentKey then btn:LockHighlight() else btn:UnlockHighlight() end
+    end
+    refreshAuraColumn("buffs")
+    refreshAuraColumn("debuffs")
+end
+
+-- Change le cadre en cours de parametrage (valide d'abord les saisies X/Y en
+-- cours sur l'ANCIEN cadre via ClearFocus -> commit, comme l'onglet Cadres).
+local function selectAuraKey(key)
+    for _, kind in ipairs({ "buffs", "debuffs" }) do
+        local W = auraState[kind]
+        if W then
+            if W.x then W.x:ClearFocus() end
+            if W.y then W.y:ClearFocus() end
+        end
+    end
+    auraState.currentKey = key
+    refreshAurasPanel()
+end
+
+-- Champ de decalage X/Y d'un type d'aura.
+local function makeAuraOffsetBox(parent, kind, field)
+    local e = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
+    e:SetSize(44, 18)
+    e:SetAutoFocus(false)
+    e:SetNumeric(false)            -- tolere le signe '-' (et la virgule)
+    e:SetMaxLetters(5)
+    e:SetFontObject("GameFontHighlightSmall")
+    local function commit()
+        local v = tonumber(((e:GetText() or ""):gsub(",", ".")))
+        if v and auraState.currentKey then
+            ns:SetAuraAnchor(auraState.currentKey, kind, field, math.floor(v + 0.5))
+        end
+        refreshAurasPanel()
+        e:ClearFocus()
+    end
+    e:SetScript("OnEnterPressed", commit)
+    e:SetScript("OnEditFocusLost", commit)
+    e:SetScript("OnEscapePressed", function(self) refreshAurasPanel(); self:ClearFocus() end)
+    return e
+end
+
+-- Tooltip de la case "Suivre barre de cast". reason (optionnel) = motif du grisage.
+local function castFollowTooltip(owner, reason)
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("Suivre barre de cast", 1, 1, 1)
+    GameTooltip:AddLine(
+        "Place la rangee sous la barre de cast quand elle est affichee (repli sous le cadre sinon).",
+        0.9, 0.9, 0.9, true)
+    if reason then GameTooltip:AddLine(reason, 1, 0.55, 0.55, true) end
+    GameTooltip:Show()
+end
+
+-- Construit une colonne (buffs ou debuffs). withCast = case "Suivre barre de cast".
+local function buildAuraColumn(panel, x, kind, title, withCast)
+    local W = {}
+    auraState[kind] = W
+
+    local t = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    t:SetPoint("TOPLEFT", x, -118)
+    t:SetText(title)
+
+    local show = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+    show:SetSize(24, 24)
+    show:SetPoint("TOPLEFT", x - 2, -134)
+    local showLbl = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    showLbl:SetPoint("LEFT", show, "RIGHT", 2, 0)
+    showLbl:SetText("Afficher")
+    show:SetScript("OnClick", function(self)
+        if auraState.currentKey then ns:SetAuraShown(auraState.currentKey, kind, self:GetChecked()) end
+    end)
+    W.show = show
+
+    if withCast then
+        local cast = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+        cast:SetSize(22, 22)
+        cast:SetPoint("TOPLEFT", x - 1, -160)
+        local castLbl = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        castLbl:SetPoint("LEFT", cast, "RIGHT", 2, 0)
+        castLbl:SetText("Suivre barre de cast")
+        cast:SetScript("OnClick", function(self)
+            if auraState.currentKey then
+                ns:SetAuraAnchor(auraState.currentKey, kind, "relTo", self:GetChecked() and "castbar" or "frame")
+            end
+        end)
+        -- Tooltip quand la case est ACTIVE (decrit l'option).
+        cast:SetScript("OnEnter", function(self) castFollowTooltip(self, nil) end)
+        cast:SetScript("OnLeave", GameTooltip_Hide)
+
+        -- Zone de survol posee par-dessus : une checkbox desactivee ne recoit plus
+        -- les events souris, donc pas de tooltip. Ce "cover" capte le survol (et
+        -- bloque le clic) UNIQUEMENT quand la case est grisee, pour afficher le
+        -- motif du grisage. Masque (donc transparent au clic) quand la case est active.
+        local cover = CreateFrame("Button", nil, panel)
+        cover:SetPoint("TOPLEFT", cast, "TOPLEFT")
+        cover:SetPoint("BOTTOM", cast, "BOTTOM")
+        cover:SetPoint("RIGHT", castLbl, "RIGHT", 2, 0)
+        cover:SetFrameLevel(cast:GetFrameLevel() + 10)
+        cover:EnableMouse(true)
+        cover:Hide()
+        cover:SetScript("OnEnter", function(self) castFollowTooltip(self, self.reason) end)
+        cover:SetScript("OnLeave", GameTooltip_Hide)
+
+        W.cast = cast
+        W.castLabel = castLbl
+        W.castCover = cover
+    end
+
+    local pLbl = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    pLbl:SetPoint("TOPLEFT", x, -190)
+    pLbl:SetText("Placement :")
+    local pdd = makeDropdown("MarcelFramerAuraPlace" .. kind, panel, 120, PLACEMENTS, function(k)
+        if not auraState.currentKey then return end
+        local p = PLACEMENT_BY_KEY[k]
+        if p then
+            ns:SetAuraAnchor(auraState.currentKey, kind, "point", p.point)
+            ns:SetAuraAnchor(auraState.currentKey, kind, "relPoint", p.relPoint)
+            refreshAurasPanel()   -- met a jour le grisage + le tooltip de "Suivre barre de cast"
+        end
+    end)
+    pdd:SetPoint("TOPLEFT", x - 16, -206)
+    W.placement = pdd
+
+    local gLbl = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    gLbl:SetPoint("TOPLEFT", x, -242)
+    gLbl:SetText("Sens :")
+    local gdd = makeDropdown("MarcelFramerAuraGrow" .. kind, panel, 90, GROWTH_OPTIONS, function(k)
+        if auraState.currentKey then ns:SetAuraAnchor(auraState.currentKey, kind, "growth", k) end
+    end)
+    gdd:SetPoint("TOPLEFT", x - 16, -258)
+    W.growth = gdd
+
+    local xLbl = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    xLbl:SetPoint("TOPLEFT", x, -294)
+    xLbl:SetText("X :")
+    W.x = makeAuraOffsetBox(panel, kind, "x")
+    W.x:SetPoint("LEFT", xLbl, "RIGHT", 6, 0)
+    local yLbl = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    yLbl:SetPoint("LEFT", W.x, "RIGHT", 14, 0)
+    yLbl:SetText("Y :")
+    W.y = makeAuraOffsetBox(panel, kind, "y")
+    W.y:SetPoint("LEFT", yLbl, "RIGHT", 6, 0)
+end
+
+-- Onglet 5 : auras (affichage + ancrage par type)
+local function buildAurasPanel(panel)
+    local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    title:SetPoint("TOPLEFT", 4, -8)
+    title:SetText("Affichage des auras")
+
+    -- Cadres proposes : ceux qui ont au moins une case d'aura (numAuras > 0).
+    wipe(auraState.keys)
+    for _, e in ipairs(AURA_FRAME_ORDER) do
+        local c = ns.config[e.key]
+        if c and (c.numAuras or 0) > 0 then auraState.keys[#auraState.keys + 1] = e end
+    end
+
+    for i, e in ipairs(auraState.keys) do
+        local b = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+        b:SetSize(112, 22)
+        local col = (i - 1) % 2
+        local row = math.floor((i - 1) / 2)
+        b:SetPoint("TOPLEFT", 8 + col * 118, -34 - row * 26)
+        b:SetText(e.label)
+        b:SetScript("OnClick", function() selectAuraKey(e.key) end)
+        auraState.selButtons[e.key] = b
+    end
+    auraState.currentKey = auraState.keys[1] and auraState.keys[1].key or nil
+
+    buildAuraColumn(panel, 8,   "buffs",   "Buffs",   true)
+    buildAuraColumn(panel, 210, "debuffs", "Debuffs", true)
+
+    local note = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    note:SetPoint("BOTTOMLEFT", 4, 4)
+    note:SetWidth(390)
+    note:SetJustifyH("LEFT")
+    note:SetText("Nombre et taille des icones : |cffffff00numAuras|r / |cffffff00auraSize|r dans Config.lua.")
+
+    refreshAurasPanel()
+end
+
 -- ----------------------------------------------------------------------------
 --  Onglets : affichage / bascule
 -- ----------------------------------------------------------------------------
@@ -707,6 +1013,7 @@ local function build()
     makeMenuButton("Ressources & PNJ", 2)
     makeMenuButton("Cadres", 3)
     makeMenuButton("Barre de cast", 4)
+    makeMenuButton("Auras", 5)
 
     local divider = frame:CreateTexture(nil, "ARTWORK")
     divider:SetColorTexture(1, 1, 1, 0.12)
@@ -719,10 +1026,12 @@ local function build()
     buildResourcePanel(makePanel())
     buildFramesPanel(makePanel())
     buildCastPanel(makePanel())
+    buildAurasPanel(makePanel())
 
     refreshColors()
     refreshSizeSliders()
     refreshCastState()
+    refreshAurasPanel()
     updateLockButton()
     showTab(1)
 
@@ -740,6 +1049,7 @@ function ns.Options.Toggle()
         refreshColors()
         refreshSizeSliders()
         refreshCastState()
+        refreshAurasPanel()
         updateLockButton()
         frame:Show()
     end

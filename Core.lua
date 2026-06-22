@@ -322,8 +322,9 @@ function ns:ApplySavedCastBars()
 end
 
 -- Active/desactive a chaud la barre de cast d'un cadre. Non securisee (la barre
--- est un StatusBar non protege) : sans restriction de combat. Re-ancre les buffs
--- pour ne pas laisser de trou a l'emplacement de la barre masquee.
+-- est un StatusBar non protege) : sans restriction de combat. Re-ancre les auras
+-- (les buffs suivent la barre de cast) pour ne pas laisser de trou a l'emplacement
+-- de la barre masquee.
 function ns:SetCastBarEnabled(key, enabled)
     if key ~= "player" and key ~= "target" and key ~= "focus" then return end
     enabled = enabled and true or false
@@ -344,7 +345,76 @@ function ns:SetCastBarEnabled(key, enabled)
             cb:Hide()
         end
     end
-    if ns.Elements.AnchorBuffs then ns.Elements.AnchorBuffs(frame) end
+    if ns.Elements.AnchorAuras then ns.Elements.AnchorAuras(frame) end
+end
+
+-- ----------------------------------------------------------------------------
+--  Auras (buffs / debuffs) : affichage + ancrage, parametrables via /mf config
+-- ----------------------------------------------------------------------------
+-- Champs d'un bloc d'ancrage persistes dans la DB.
+local AURA_ANCHOR_FIELDS = { "point", "relTo", "relPoint", "x", "y", "growth" }
+
+-- Fusionne les reglages d'auras sauvegardes dans ns.config (AVANT creation des
+-- cadres, car CreateAuras lit showBuffs/showDebuffs + buffAnchor/debuffAnchor a
+-- la creation). On copie champ par champ sur le bloc d'ancrage existant pour que
+-- les valeurs par defaut de Config.lua comblent les trous.
+function ns:ApplySavedAuras()
+    local saved = MarcelFramerDB and MarcelFramerDB.auras
+    if not saved then return end
+    for key, data in pairs(saved) do
+        local cfg = ns.config[key]
+        if cfg then
+            if data.showBuffs   ~= nil then cfg.showBuffs   = data.showBuffs   end
+            if data.showDebuffs ~= nil then cfg.showDebuffs = data.showDebuffs end
+            for _, kind in ipairs({ "buffAnchor", "debuffAnchor" }) do
+                local src = data[kind]
+                if src then
+                    cfg[kind] = cfg[kind] or {}
+                    for _, f in ipairs(AURA_ANCHOR_FIELDS) do
+                        if src[f] ~= nil then cfg[kind][f] = src[f] end
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- Sous-table DB d'un cadre (creee a la demande).
+local function auraDB(key)
+    MarcelFramerDB.auras = MarcelFramerDB.auras or {}
+    MarcelFramerDB.auras[key] = MarcelFramerDB.auras[key] or {}
+    return MarcelFramerDB.auras[key]
+end
+
+-- Bascule a chaud l'affichage d'un type d'aura (kind = "buffs"/"debuffs").
+function ns:SetAuraShown(key, kind, shown)
+    local cfg = ns.config[key]
+    if not cfg then return end
+    shown = shown and true or false
+    auraDB(key)[kind == "buffs" and "showBuffs" or "showDebuffs"] = shown
+    local data = ns.registry[key]
+    if data and ns.Elements.SetAuraTypeShown then
+        ns.Elements.SetAuraTypeShown(data.frame, kind, shown)
+    else
+        if kind == "buffs" then cfg.showBuffs = shown else cfg.showDebuffs = shown end
+    end
+end
+
+-- Modifie un champ d'ancrage (point/relPoint/relTo/x/y/growth) d'un type d'aura,
+-- l'enregistre, puis re-ancre la rangee a chaud.
+function ns:SetAuraAnchor(key, kind, field, value)
+    local cfg = ns.config[key]
+    if not cfg then return end
+    local cfgKey = (kind == "buffs") and "buffAnchor" or "debuffAnchor"
+    cfg[cfgKey] = cfg[cfgKey] or {}
+    cfg[cfgKey][field] = value
+
+    local db = auraDB(key)
+    db[cfgKey] = db[cfgKey] or {}
+    db[cfgKey][field] = value
+
+    local data = ns.registry[key]
+    if data and ns.Elements.AnchorAuras then ns.Elements.AnchorAuras(data.frame) end
 end
 
 -- ----------------------------------------------------------------------------
@@ -383,9 +453,11 @@ f:SetScript("OnEvent", function(self, event)
         MarcelFramerDB.castColors = MarcelFramerDB.castColors or {}
         MarcelFramerDB.sizes = MarcelFramerDB.sizes or {}
         MarcelFramerDB.castbars = MarcelFramerDB.castbars or {}
+        MarcelFramerDB.auras = MarcelFramerDB.auras or {}
         ns:ApplySavedColors()
         ns:ApplySavedSizes()
         ns:ApplySavedCastBars()
+        ns:ApplySavedAuras()
         ns:HideBlizzard()
         if ns.UnitFrame and ns.UnitFrame.CreateAll then ns.UnitFrame.CreateAll() end
     elseif event == "PLAYER_REGEN_ENABLED" then

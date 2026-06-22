@@ -621,57 +621,133 @@ function Elements.BuildVisuals(frame)
     if cfg.showCombat then BuildCombat(frame) end
 end
 
--- (Re)ancre la 1re icone de buff : sous la barre de cast si elle est active,
--- sinon directement sous le cadre. Rejouable a chaud quand on bascule la barre
--- de cast (evite un trou vide a l'emplacement de la barre masquee).
-function Elements.AnchorBuffs(frame)
-    local icons = frame.buffIcons
-    if not icons or not icons[1] then return end
-    local cb = frame.castBar
-    local below = (cb and cb.enabled ~= false) and cb or frame
-    local btn = icons[1]
-    btn:ClearAllPoints()
-    if frame.config.mirror then
-        btn:SetPoint("TOPRIGHT", below, "BOTTOMRIGHT", 0, -3)
+-- ----------------------------------------------------------------------------
+--  Ancrage des rangees d'auras (buffs / debuffs) — parametrable PAR CADRE et
+--  PAR TYPE via cfg.buffAnchor / cfg.debuffAnchor (voir Config.lua). Chaque bloc
+--  d'ancrage est optionnel ; les champs absents retombent sur le defaut ci-dessous
+--  (lui-meme derive de cfg.mirror pour rester coherent avec le reste du cadre).
+-- ----------------------------------------------------------------------------
+
+-- Pas entre deux icones consecutives, selon la direction de croissance demandee.
+local AURA_GROWTH = {
+    RIGHT = { point = "LEFT",   rel = "RIGHT",  x = 3,  y = 0  },
+    LEFT  = { point = "RIGHT",  rel = "LEFT",   x = -3, y = 0  },
+    DOWN  = { point = "TOP",    rel = "BOTTOM", x = 0,  y = -3 },
+    UP    = { point = "BOTTOM", rel = "TOP",    x = 0,  y = 3  },
+}
+
+-- Ancre par defaut d'un type ("buffs"/"debuffs") selon le mode miroir.
+-- buffs   : rangee sous la barre de cast (repli : sous le cadre), croissance laterale.
+-- debuffs : rangee au-dessus du cadre, croissance laterale.
+local function DefaultAuraAnchor(kind, mirror)
+    if kind == "buffs" then
+        if mirror then
+            return { point = "TOPRIGHT", relTo = "castbar", relPoint = "BOTTOMRIGHT", x = 0, y = -3, growth = "LEFT" }
+        end
+        return { point = "TOPLEFT", relTo = "castbar", relPoint = "BOTTOMLEFT", x = 0, y = -3, growth = "RIGHT" }
     else
-        btn:SetPoint("TOPLEFT", below, "BOTTOMLEFT", 0, -3)
+        if mirror then
+            return { point = "BOTTOMRIGHT", relTo = "frame", relPoint = "TOPRIGHT", x = 0, y = 3, growth = "LEFT" }
+        end
+        return { point = "BOTTOMLEFT", relTo = "frame", relPoint = "TOPLEFT", x = 0, y = 3, growth = "RIGHT" }
     end
 end
 
--- Construit les rangees de buffs/debuffs (sous le cadre / au-dessus, en miroir si besoin)
-function Elements.CreateAuras(frame)
+-- Fusionne le bloc utilisateur (cfg.buffAnchor / cfg.debuffAnchor) sur le defaut.
+-- Public (utilise aussi par Options.lua pour pre-remplir l'onglet "Auras").
+function Elements.GetResolvedAuraAnchor(cfg, kind)
+    local def = DefaultAuraAnchor(kind, cfg and cfg.mirror)
+    local user = cfg and ((kind == "buffs") and cfg.buffAnchor or cfg.debuffAnchor)
+    if user then
+        for k, v in pairs(user) do def[k] = v end
+    end
+    return def
+end
+
+local function ResolveAuraAnchor(frame, kind)
+    return Elements.GetResolvedAuraAnchor(frame.config, kind)
+end
+
+-- (Re)ancre une rangee d'icones d'auras. relTo = "castbar" suit la barre de cast
+-- quand elle est active (repli sur le cadre), ce qui evite un trou vide quand on
+-- bascule la barre via /mf config. Rejouable a chaud.
+--
+-- La barre de cast est placee SOUS le cadre : la suivre n'a de sens que pour une
+-- rangee qui "pend" sous sa cible (point en TOP*, relPoint en BOTTOM*). Pour tout
+-- autre placement (dessus, gauche/droite...), la barre n'est pas intercalee entre
+-- le cadre et la rangee : on ignore le suivi et on ancre au cadre, sinon le
+-- rendu differe selon que la barre est affichee ou non (ex. "Dessus" basculait
+-- les buffs a l'interieur du cadre quand la barre etait active).
+function Elements.AnchorAuraRow(frame, icons, kind)
+    if not icons or not icons[1] then return end
+    local a = ResolveAuraAnchor(frame, kind)
+
+    local relTarget = frame
+    if a.relTo == "castbar" then
+        local hangsBelow = (a.point or ""):sub(1, 3) == "TOP"
+            and (a.relPoint or ""):sub(1, 6) == "BOTTOM"
+        local cb = frame.castBar
+        if hangsBelow and cb and cb.enabled ~= false then
+            relTarget = cb
+        end
+    end
+
+    local first = icons[1]
+    first:ClearAllPoints()
+    first:SetPoint(a.point, relTarget, a.relPoint, a.x or 0, a.y or 0)
+
+    local g = AURA_GROWTH[a.growth] or AURA_GROWTH.RIGHT
+    for i = 2, #icons do
+        icons[i]:ClearAllPoints()
+        icons[i]:SetPoint(g.point, icons[i - 1], g.rel, g.x, g.y)
+    end
+end
+
+-- (Re)ancre les deux rangees (buffs + debuffs) d'un cadre.
+function Elements.AnchorAuras(frame)
+    Elements.AnchorAuraRow(frame, frame.buffIcons, "buffs")
+    Elements.AnchorAuraRow(frame, frame.debuffIcons, "debuffs")
+end
+
+-- Construit (une seule fois) la rangee d'icones d'un type. cfg.numAuras = 0 => rien.
+local function BuildAuraRow(frame, kind)
     local cfg = frame.config
     local max = cfg.numAuras or 0
     if max <= 0 then return end
     local size = cfg.auraSize or 18
-    local mirror = cfg.mirror
-
-    if cfg.showBuffs then
-        frame.buffIcons = {}
-        for i = 1, max do
-            local btn = CreateAuraIcon(frame, size)
-            if i > 1 then
-                if mirror then btn:SetPoint("RIGHT", frame.buffIcons[i - 1], "LEFT", -3, 0)
-                else btn:SetPoint("LEFT", frame.buffIcons[i - 1], "RIGHT", 3, 0) end
-            end
-            frame.buffIcons[i] = btn
-        end
-        Elements.AnchorBuffs(frame)   -- ancre la 1re icone (sous la barre de cast si active)
+    local t = {}
+    for i = 1, max do
+        t[i] = CreateAuraIcon(frame, size)
     end
+    if kind == "buffs" then frame.buffIcons = t else frame.debuffIcons = t end
+    return t
+end
 
-    if cfg.showDebuffs then
-        frame.debuffIcons = {}
-        for i = 1, max do
-            local btn = CreateAuraIcon(frame, size)
-            if i == 1 then
-                if mirror then btn:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", 0, 3)
-                else btn:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 3) end
-            else
-                if mirror then btn:SetPoint("RIGHT", frame.debuffIcons[i - 1], "LEFT", -3, 0)
-                else btn:SetPoint("LEFT", frame.debuffIcons[i - 1], "RIGHT", 3, 0) end
-            end
-            frame.debuffIcons[i] = btn
+-- Construit les rangees de buffs/debuffs (l'ancrage est gere par AnchorAuras).
+function Elements.CreateAuras(frame)
+    local cfg = frame.config
+    if (cfg.numAuras or 0) <= 0 then return end
+    if cfg.showBuffs   then BuildAuraRow(frame, "buffs")   end
+    if cfg.showDebuffs then BuildAuraRow(frame, "debuffs") end
+    Elements.AnchorAuras(frame)
+end
+
+-- Bascule a chaud l'affichage d'un type d'aura (buffs/debuffs). Construit la
+-- rangee a la demande si elle n'existait pas (cas ou le type etait masque a la
+-- creation). Les icones d'aura sont de simples Frames non protegees : pas de
+-- restriction de combat.
+function Elements.SetAuraTypeShown(frame, kind, shown)
+    local cfg = frame.config
+    if kind == "buffs" then cfg.showBuffs = shown else cfg.showDebuffs = shown end
+    local icons = (kind == "buffs") and frame.buffIcons or frame.debuffIcons
+    if shown then
+        if not icons then icons = BuildAuraRow(frame, kind) end
+        if icons then
+            Elements.AnchorAuras(frame)
+            Elements.UpdateAuras(frame)
         end
+    elseif icons then
+        for _, b in ipairs(icons) do b:Hide() end
     end
 end
 
@@ -1020,11 +1096,22 @@ local function FillAuras(icons, unit, filter, isDebuff)
     end
 end
 
+local function HideAll(icons)
+    for _, b in ipairs(icons) do b:Hide() end
+end
+
 function Elements.UpdateAuras(frame)
     local unit = frame.unit
     if not unit or not UnitExists(unit) then return end
-    if frame.buffIcons then FillAuras(frame.buffIcons, unit, "HELPFUL", false) end
-    if frame.debuffIcons then FillAuras(frame.debuffIcons, unit, "HARMFUL", true) end
+    local cfg = frame.config
+    if frame.buffIcons then
+        if cfg.showBuffs then FillAuras(frame.buffIcons, unit, "HELPFUL", false)
+        else HideAll(frame.buffIcons) end
+    end
+    if frame.debuffIcons then
+        if cfg.showDebuffs then FillAuras(frame.debuffIcons, unit, "HARMFUL", true)
+        else HideAll(frame.debuffIcons) end
+    end
 end
 
 -- Affiche/masque l'icone de combat selon l'etat de l'unite de la frame.
