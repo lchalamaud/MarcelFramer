@@ -610,8 +610,8 @@ function Elements.BuildVisuals(frame)
     -- Coins arrondis (best-effort, opt-in)
     if ns.config.roundedCorners then ApplyRoundedCorners(frame) end
 
-    -- Textes : layout 3 zones pour player/target, condense sinon
-    if frame.unitType == "player" or frame.unitType == "target" then
+    -- Textes : layout 3 zones pour player/target/focus, condense sinon
+    if frame.unitType == "player" or frame.unitType == "target" or frame.unitType == "focus" then
         BuildRichText(frame)
     else
         BuildSimpleText(frame)
@@ -778,7 +778,7 @@ end
 
 local function CastBar_OnEvent(self, event, arg1)
     local frame = self.owner
-    if event == "PLAYER_TARGET_CHANGED" then
+    if event == "PLAYER_TARGET_CHANGED" or event == "PLAYER_FOCUS_CHANGED" then
         Elements.CastBarCheck(frame)
         return
     end
@@ -841,6 +841,8 @@ function Elements.CreateCastBar(frame)
     for _, ev in ipairs(CAST_EVENTS) do cb:RegisterEvent(ev) end
     if frame.unit == "target" then
         cb:RegisterEvent("PLAYER_TARGET_CHANGED")
+    elseif frame.unit == "focus" then
+        cb:RegisterEvent("PLAYER_FOCUS_CHANGED")
     end
 
     frame.castBar = cb

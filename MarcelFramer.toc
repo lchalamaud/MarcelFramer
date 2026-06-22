@@ -1,6 +1,6 @@
 ## Interface: 50504
 ## Title: MarcelFramer
-## Notes: Cadres d'unites autonomes (player, target, tot, pet) sans dependance.
+## Notes: Cadres d'unites autonomes (player, target, focus, tot, pet) sans dependance.
 ## Author: Louis
 ## Version: 1.0.0
 ## SavedVariables: MarcelFramerDB
