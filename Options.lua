@@ -735,6 +735,11 @@ local function refreshAuraColumn(kind)
     if kind == "buffs" then shown = (cfg.showBuffs ~= false) else shown = (cfg.showDebuffs ~= false) end
     W.show:SetChecked(shown)
 
+    -- Filtres par type : seulement les miennes / les miennes plus grosses.
+    local prefix = (kind == "buffs") and "buff" or "debuff"
+    if W.onlyMine then W.onlyMine:SetChecked(cfg[prefix .. "OnlyMine"] and true or false) end
+    if W.bigMine  then W.bigMine:SetChecked(cfg[prefix .. "BigMine"] and true or false) end
+
     local a = ns.Elements.GetResolvedAuraAnchor(cfg, kind)
     local entry = PLACEMENT_BY_CORNERS[(a.point or "") .. "|" .. (a.relPoint or "")]
     if entry then setDropdown(W.placement, entry.key) else setDropdown(W.placement, nil, "Personnalise") end
@@ -879,8 +884,32 @@ local function buildAuraColumn(panel, x, kind, title, withCast)
         W.castCover = cover
     end
 
+    -- Filtre "seulement les miennes" : n'affiche que les auras lancees par le joueur.
+    local onlyMine = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+    onlyMine:SetSize(22, 22)
+    onlyMine:SetPoint("TOPLEFT", x - 1, -184)
+    local onlyMineLbl = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    onlyMineLbl:SetPoint("LEFT", onlyMine, "RIGHT", 2, 0)
+    onlyMineLbl:SetText("Seulement les miennes")
+    onlyMine:SetScript("OnClick", function(self)
+        if auraState.currentKey then ns:SetAuraFlag(auraState.currentKey, kind, "onlyMine", self:GetChecked()) end
+    end)
+    W.onlyMine = onlyMine
+
+    -- "Les miennes plus grosses" : agrandit mes auras (facteur auraMineScale).
+    local bigMine = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+    bigMine:SetSize(22, 22)
+    bigMine:SetPoint("TOPLEFT", x - 1, -208)
+    local bigMineLbl = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    bigMineLbl:SetPoint("LEFT", bigMine, "RIGHT", 2, 0)
+    bigMineLbl:SetText("Les miennes plus grosses")
+    bigMine:SetScript("OnClick", function(self)
+        if auraState.currentKey then ns:SetAuraFlag(auraState.currentKey, kind, "bigMine", self:GetChecked()) end
+    end)
+    W.bigMine = bigMine
+
     local pLbl = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    pLbl:SetPoint("TOPLEFT", x, -190)
+    pLbl:SetPoint("TOPLEFT", x, -236)
     pLbl:SetText("Placement :")
     local pdd = makeDropdown("MarcelFramerAuraPlace" .. kind, panel, 120, PLACEMENTS, function(k)
         if not auraState.currentKey then return end
@@ -891,20 +920,20 @@ local function buildAuraColumn(panel, x, kind, title, withCast)
             refreshAurasPanel()   -- met a jour le grisage + le tooltip de "Suivre barre de cast"
         end
     end)
-    pdd:SetPoint("TOPLEFT", x - 16, -206)
+    pdd:SetPoint("TOPLEFT", x - 16, -252)
     W.placement = pdd
 
     local gLbl = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    gLbl:SetPoint("TOPLEFT", x, -242)
+    gLbl:SetPoint("TOPLEFT", x, -288)
     gLbl:SetText("Sens :")
     local gdd = makeDropdown("MarcelFramerAuraGrow" .. kind, panel, 90, GROWTH_OPTIONS, function(k)
         if auraState.currentKey then ns:SetAuraAnchor(auraState.currentKey, kind, "growth", k) end
     end)
-    gdd:SetPoint("TOPLEFT", x - 16, -258)
+    gdd:SetPoint("TOPLEFT", x - 16, -304)
     W.growth = gdd
 
     local xLbl = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    xLbl:SetPoint("TOPLEFT", x, -294)
+    xLbl:SetPoint("TOPLEFT", x, -340)
     xLbl:SetText("X :")
     W.x = makeAuraOffsetBox(panel, kind, "x")
     W.x:SetPoint("LEFT", xLbl, "RIGHT", 6, 0)

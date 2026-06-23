@@ -366,6 +366,10 @@ function ns:ApplySavedAuras()
         if cfg then
             if data.showBuffs   ~= nil then cfg.showBuffs   = data.showBuffs   end
             if data.showDebuffs ~= nil then cfg.showDebuffs = data.showDebuffs end
+            -- Filtres par type (seulement les miennes / les miennes plus grosses)
+            for _, f in ipairs({ "buffOnlyMine", "debuffOnlyMine", "buffBigMine", "debuffBigMine" }) do
+                if data[f] ~= nil then cfg[f] = data[f] end
+            end
             for _, kind in ipairs({ "buffAnchor", "debuffAnchor" }) do
                 local src = data[kind]
                 if src then
@@ -415,6 +419,26 @@ function ns:SetAuraAnchor(key, kind, field, value)
 
     local data = ns.registry[key]
     if data and ns.Elements.AnchorAuras then ns.Elements.AnchorAuras(data.frame) end
+end
+
+-- Bascule un drapeau de filtre d'auras (flag = "onlyMine" | "bigMine") pour un
+-- type (kind = "buffs"/"debuffs") d'un cadre. Persiste puis re-remplit la rangee
+-- a chaud (le re-remplissage applique le filtre et les tailles). Pour bigMine on
+-- re-ancre aussi : les icones changent de taille, l'ancrage bord-a-bord se recale.
+function ns:SetAuraFlag(key, kind, flag, value)
+    local cfg = ns.config[key]
+    if not cfg then return end
+    value = value and true or false
+    local field = ((kind == "buffs") and "buff" or "debuff")
+        .. ((flag == "onlyMine") and "OnlyMine" or "BigMine")
+    cfg[field] = value
+    auraDB(key)[field] = value
+
+    local data = ns.registry[key]
+    if data then
+        if ns.Elements.UpdateAuras then ns.Elements.UpdateAuras(data.frame) end
+        if flag == "bigMine" and ns.Elements.AnchorAuras then ns.Elements.AnchorAuras(data.frame) end
+    end
 end
 
 -- ----------------------------------------------------------------------------
