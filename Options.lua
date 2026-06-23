@@ -976,7 +976,7 @@ local function buildAurasPanel(panel)
     note:SetPoint("BOTTOMLEFT", 4, 4)
     note:SetWidth(390)
     note:SetJustifyH("LEFT")
-    note:SetText("Nombre et taille des icones : |cffffff00numAuras|r / |cffffff00auraSize|r dans Config.lua.")
+    note:SetText("Icones par ligne / lignes max / taille : |cffffff00numAuras|r / |cffffff00maxAuraRows|r / |cffffff00auraSize|r dans Config.lua.")
 
     refreshAurasPanel()
 end

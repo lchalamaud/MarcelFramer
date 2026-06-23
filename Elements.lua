@@ -308,9 +308,17 @@ local function CreateAuraIcon(parent, size)
 
     local cd = CreateFrame("Cooldown", nil, btn, "CooldownFrameTemplate")
     cd:SetAllPoints()
+    -- On garde le balayage radial (duree du buff/debuff) mais on masque le
+    -- texte de temps restant : a la place on affiche le nombre de stacks.
+    cd:SetHideCountdownNumbers(true)
+    -- Inverse le sens clair/sombre du balayage (sans changer la rotation) :
+    -- aura claire quand il reste toute la duree, qui s'assombrit en se terminant.
+    cd:SetReverse(true)
     btn.cd = cd
 
-    local count = btn:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+    -- Compteur de stacks : enfant du cooldown pour rester visible au-dessus du
+    -- balayage.
+    local count = cd:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     count:SetPoint("BOTTOMRIGHT", 1, -1)
     btn.count = count
 
@@ -701,14 +709,37 @@ function Elements.AnchorAuraRow(frame, icons, kind)
         end
     end
 
-    local first = icons[1]
-    first:ClearAllPoints()
-    first:SetPoint(a.point, relTarget, a.relPoint, a.x or 0, a.y or 0)
-
     local g = AURA_GROWTH[a.growth] or AURA_GROWTH.RIGHT
-    for i = 2, #icons do
-        icons[i]:ClearAllPoints()
-        icons[i]:SetPoint(g.point, icons[i - 1], g.rel, g.x, g.y)
+
+    -- Disposition en grille : on remplit une ligne de cfg.numAuras icones, puis on
+    -- saute a la ligne suivante sur l'axe perpendiculaire a la croissance. Le sens
+    -- du saut decoule du point d'ancrage : ancree en haut (TOP*) la grille empile
+    -- ses lignes vers le BAS, ancree en bas (BOTTOM*) vers le HAUT ; idem
+    -- lateralement pour les croissances verticales (UP/DOWN).
+    local perRow = frame.config.numAuras or #icons
+    if perRow < 1 then perRow = #icons end
+
+    local horizontal = (a.growth == "RIGHT" or a.growth == "LEFT")
+    local rowStep = (frame.config.auraSize or 18) + 3
+    local rdx, rdy = 0, 0
+    if horizontal then
+        rdy = ((a.point or ""):sub(1, 3) == "TOP") and -rowStep or rowStep
+    else
+        rdx = ((a.point or ""):sub(-4) == "LEFT") and rowStep or -rowStep
+    end
+
+    for i = 1, #icons do
+        local icon = icons[i]
+        icon:ClearAllPoints()
+        if i == 1 then
+            icon:SetPoint(a.point, relTarget, a.relPoint, a.x or 0, a.y or 0)
+        elseif (i - 1) % perRow == 0 then
+            -- premiere icone d'une nouvelle ligne : alignee sous/au-dessus (ou a
+            -- cote) de la premiere icone de la ligne precedente.
+            icon:SetPoint(a.point, icons[i - perRow], a.point, rdx, rdy)
+        else
+            icon:SetPoint(g.point, icons[i - 1], g.rel, g.x, g.y)
+        end
     end
 end
 
@@ -718,14 +749,18 @@ function Elements.AnchorAuras(frame)
     Elements.AnchorAuraRow(frame, frame.debuffIcons, "debuffs")
 end
 
--- Construit (une seule fois) la rangee d'icones d'un type. cfg.numAuras = 0 => rien.
+-- Construit (une seule fois) la grille d'icones d'un type. cfg.numAuras = icones
+-- PAR LIGNE ; cfg.maxAuraRows = nombre de lignes max (defaut 1). Total d'icones =
+-- numAuras * maxAuraRows. cfg.numAuras = 0 => rien.
 local function BuildAuraRow(frame, kind)
     local cfg = frame.config
-    local max = cfg.numAuras or 0
-    if max <= 0 then return end
+    local perRow = cfg.numAuras or 0
+    if perRow <= 0 then return end
+    local rows = cfg.maxAuraRows or 1
+    if rows < 1 then rows = 1 end
     local size = cfg.auraSize or 18
     local t = {}
-    for i = 1, max do
+    for i = 1, perRow * rows do
         t[i] = CreateAuraIcon(frame, size)
     end
     if kind == "buffs" then frame.buffIcons = t else frame.debuffIcons = t end

@@ -203,9 +203,6 @@ function ns:HideBlizzard()
     if FocusFrameHealthBar then FocusFrameHealthBar:UnregisterAllEvents() end
     if FocusFrameManaBar then FocusFrameManaBar:UnregisterAllEvents() end
     if FocusFrameToT then killFrame(FocusFrameToT) end
-
-    -- Groupe (party) et raid : volontairement non masques. MarcelFramer ne gere
-    -- pas ces cadres ; on laisse l'interface Blizzard de base s'en charger.
 end
 
 -- ----------------------------------------------------------------------------
