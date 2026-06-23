@@ -181,6 +181,14 @@ ns.config = {
         showDebuffs   = true,
         numAuras      = 6,
         auraSize      = 20,
+        -- Filtres d'auras PAR TYPE (buffs / debuffs), parametrables via /mf config :
+        --   *OnlyMine = true : n'affiche que les auras lancees par le joueur.
+        --   *BigMine  = true : agrandit mes auras (facteur auraMineScale) ; celles
+        --                      des autres restent en auraSize.
+        -- auraMineScale : facteur d'agrandissement de mes auras quand *BigMine.
+        buffOnlyMine   = false, debuffOnlyMine = false,
+        buffBigMine    = false, debuffBigMine  = false,
+        auraMineScale  = 1.3,
         -- Affichage des auras : on/off (showBuffs/showDebuffs ci-dessus) et
         -- ANCRAGE independant pour chaque type, parametrable par cadre.
         --   point    : coin de la 1re icone de la rangee
@@ -216,6 +224,10 @@ ns.config = {
         showDebuffs   = true,
         numAuras      = 6,
         auraSize      = 20,
+        -- Filtres d'auras par type (cf. doc du cadre `player`).
+        buffOnlyMine   = false, debuffOnlyMine = false,
+        buffBigMine    = false, debuffBigMine  = false,
+        auraMineScale  = 1.3,
         -- Ancrage des auras (cf. doc du cadre `player`).
         buffAnchor    = { point = "BOTTOMLEFT", relTo = "frame",   relPoint = "TOPLEFT",    x = 1, y = 1,  growth = "RIGHT" },
         debuffAnchor  = { point = "TOPLEFT",    relTo = "castbar", relPoint = "BOTTOMLEFT", x = 1, y = -4, growth = "RIGHT" },
@@ -242,6 +254,10 @@ ns.config = {
         showDebuffs   = true,
         numAuras      = 6,
         auraSize      = 20,
+        -- Filtres d'auras par type (cf. doc du cadre `player`).
+        buffOnlyMine   = false, debuffOnlyMine = false,
+        buffBigMine    = false, debuffBigMine  = false,
+        auraMineScale  = 1.3,
         -- Ancrage des auras (cf. doc du cadre `player`).
         buffAnchor    = { point = "BOTTOMLEFT", relTo = "castbar", relPoint = "TOPLEFT",    x = 0, y = -3, growth = "RIGHT" },
         debuffAnchor  = { point = "TOPLEFT",    relTo = "castbar", relPoint = "BOTTOMLEFT", x = 1, y = -4, growth = "RIGHT" },

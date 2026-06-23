@@ -56,11 +56,14 @@ if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
     GetAura = function(unit, index, filter)
         local data = C_UnitAuras.GetAuraDataByIndex(unit, index, filter)
         if not data then return nil end
-        return data.name, data.icon, data.applications, data.dispelName, data.duration, data.expirationTime
+        return data.name, data.icon, data.applications, data.dispelName, data.duration,
+            data.expirationTime, data.sourceUnit
     end
 else
     GetAura = function(unit, index, filter)
-        return UnitAura(unit, index, filter)  -- name, icon, count, dispelType, duration, expirationTime, ...
+        -- name, icon, count, dispelType, duration, expirationTime, source(unitCaster), ...
+        local name, icon, count, dispelType, duration, expiration, source = UnitAura(unit, index, filter)
+        return name, icon, count, dispelType, duration, expiration, source
     end
 end
 
@@ -629,11 +632,17 @@ end
 -- ----------------------------------------------------------------------------
 
 -- Pas entre deux icones consecutives, selon la direction de croissance demandee.
+-- Les rangees horizontales (RIGHT/LEFT) chainent par le bord BAS : toutes les
+-- icones partagent une meme ligne de base, donc une icone plus grosse (option
+-- "les miennes plus grosses") depasse vers le HAUT au lieu de decentrer la rangee.
+-- Idem pour les rangees verticales (DOWN/UP) qui s'alignent sur le bord GAUCHE.
+-- Pour des icones de meme taille, l'ancrage par bord est identique a un ancrage
+-- centre : aucun changement de rendu dans le cas courant.
 local AURA_GROWTH = {
-    RIGHT = { point = "LEFT",   rel = "RIGHT",  x = 3,  y = 0  },
-    LEFT  = { point = "RIGHT",  rel = "LEFT",   x = -3, y = 0  },
-    DOWN  = { point = "TOP",    rel = "BOTTOM", x = 0,  y = -3 },
-    UP    = { point = "BOTTOM", rel = "TOP",    x = 0,  y = 3  },
+    RIGHT = { point = "BOTTOMLEFT",  rel = "BOTTOMRIGHT", x = 3,  y = 0  },
+    LEFT  = { point = "BOTTOMRIGHT", rel = "BOTTOMLEFT",  x = -3, y = 0  },
+    DOWN  = { point = "TOPLEFT",     rel = "BOTTOMLEFT",  x = 0,  y = -3 },
+    UP    = { point = "BOTTOMLEFT",  rel = "TOPLEFT",     x = 0,  y = 3  },
 }
 
 -- Ancre par defaut d'un type ("buffs"/"debuffs") selon le mode miroir.
@@ -1068,11 +1077,39 @@ local DEBUFF_COLORS = {
     none    = { r = 0.80, g = 0.00, b = 0.00 },
 }
 
-local function FillAuras(icons, unit, filter, isDebuff)
-    for i = 1, #icons do
-        local btn = icons[i]
-        local name, icon, count, dispelType, duration, expiration = GetAura(unit, i, filter)
-        if name then
+-- Plafond de balayage des index d'aura : avec le filtre "seulement les miennes",
+-- mes auras peuvent se trouver au-dela des premieres cases (l'unite a beaucoup
+-- d'auras d'autres lanceurs). On parcourt donc tous les index et on ne remplit
+-- que les cases disponibles avec les auras retenues.
+local MAX_AURA_SCAN = 40
+
+-- Une aura est "mienne" si son lanceur est le joueur (ou son vehicule).
+local function AuraIsMine(source)
+    return source == "player" or source == "vehicle"
+end
+
+-- Remplit une rangee d'icones. opts :
+--   onlyMine : ne retient que les auras lancees par le joueur
+--   bigMine  : agrandit (mineSize) les auras du joueur, les autres en baseSize
+--   baseSize / mineSize : tailles d'icone (px)
+local function FillAuras(icons, unit, filter, isDebuff, opts)
+    local n = #icons
+    local onlyMine = opts and opts.onlyMine
+    local bigMine  = opts and opts.bigMine
+    local baseSize = (opts and opts.baseSize) or 18
+    local mineSize = (opts and opts.mineSize) or baseSize
+
+    local slot = 0
+    for i = 1, MAX_AURA_SCAN do
+        if slot >= n then break end
+        local name, icon, count, dispelType, duration, expiration, source = GetAura(unit, i, filter)
+        if not name then break end
+        local mine = AuraIsMine(source)
+        if (not onlyMine) or mine then
+            slot = slot + 1
+            local btn = icons[slot]
+            local sz = (bigMine and mine) and mineSize or baseSize
+            btn:SetSize(sz, sz)
             btn.tex:SetTexture(icon)
             if count and count > 1 then
                 btn.count:SetText(count)
@@ -1090,10 +1127,9 @@ local function FillAuras(icons, unit, filter, isDebuff)
                 btn.bd:SetColorTexture(c.r, c.g, c.b, 1)
             end
             btn:Show()
-        else
-            btn:Hide()
         end
     end
+    for i = slot + 1, n do icons[i]:Hide() end
 end
 
 local function HideAll(icons)
@@ -1104,13 +1140,30 @@ function Elements.UpdateAuras(frame)
     local unit = frame.unit
     if not unit or not UnitExists(unit) then return end
     local cfg = frame.config
+    local baseSize = cfg.auraSize or 18
+    local mineSize = math.floor(baseSize * (cfg.auraMineScale or 1.3) + 0.5)
     if frame.buffIcons then
-        if cfg.showBuffs then FillAuras(frame.buffIcons, unit, "HELPFUL", false)
+        if cfg.showBuffs then
+            FillAuras(frame.buffIcons, unit, "HELPFUL", false, {
+                onlyMine = cfg.buffOnlyMine, bigMine = cfg.buffBigMine,
+                baseSize = baseSize, mineSize = mineSize,
+            })
         else HideAll(frame.buffIcons) end
     end
     if frame.debuffIcons then
-        if cfg.showDebuffs then FillAuras(frame.debuffIcons, unit, "HARMFUL", true)
+        if cfg.showDebuffs then
+            FillAuras(frame.debuffIcons, unit, "HARMFUL", true, {
+                onlyMine = cfg.debuffOnlyMine, bigMine = cfg.debuffBigMine,
+                baseSize = baseSize, mineSize = mineSize,
+            })
         else HideAll(frame.debuffIcons) end
+    end
+
+    -- Les tailles varient (bigMine) : re-ancrer pour que la rangee reste alignee
+    -- meme apres un changement de cible (l'ancrage bord-a-bord absorbe les tailles
+    -- mixtes). Sans cout perceptible, et seulement si bigMine est actif quelque part.
+    if (frame.buffIcons and cfg.buffBigMine) or (frame.debuffIcons and cfg.debuffBigMine) then
+        Elements.AnchorAuras(frame)
     end
 end
 
