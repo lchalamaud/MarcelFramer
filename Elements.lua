@@ -322,6 +322,20 @@ local function CreateAuraIcon(parent, size)
     count:SetPoint("BOTTOMRIGHT", 1, -1)
     btn.count = count
 
+    -- Tooltip au survol : l'unite, l'index reel de l'aura et le filtre sont
+    -- (re)stockes a chaque UpdateAuras (cf. FillAuras). GameTooltip n'est pas
+    -- protege : utilisable meme en combat.
+    btn:EnableMouse(true)
+    btn:SetScript("OnEnter", function(self)
+        if not self.auraIndex or not self.unit then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetUnitAura(self.unit, self.auraIndex, self.filter)
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+
     btn:Hide()
     return btn
 end
@@ -1143,6 +1157,11 @@ local function FillAuras(icons, unit, filter, isDebuff, opts)
         if (not onlyMine) or mine then
             slot = slot + 1
             local btn = icons[slot]
+            -- Memorise de quoi reconstruire le tooltip au survol (index reel i,
+            -- pas le slot, car onlyMine peut sauter des index).
+            btn.unit = unit
+            btn.auraIndex = i
+            btn.filter = filter
             local sz = (bigMine and mine) and mineSize or baseSize
             btn:SetSize(sz, sz)
             btn.tex:SetTexture(icon)
