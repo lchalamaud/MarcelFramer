@@ -109,9 +109,7 @@ end
 
 -- Comportement global
 ns.config = {
-    -- Masquage des cadres Blizzard par defaut.
-    -- player/target/tot/pet/focus uniquement. Le groupe et le raid utilisent
-    -- l'interface Blizzard de base (non masques par MarcelFramer).
+    -- Masquage des cadres Blizzard par defaut (player/target/tot/pet/focus).
     hideBlizzard     = true,
 
     -- Adoucissement des couleurs de classe / reaction (moins flashy).
@@ -179,7 +177,8 @@ ns.config = {
         -- combatColor = {r,g,b} : teinte l'icone (defaut du preset "combat" = rouge doux).
         showBuffs     = false,
         showDebuffs   = true,
-        numAuras      = 6,
+        numAuras      = 6,        -- icones PAR LIGNE
+        maxAuraRows   = 3,        -- lignes max : au-dela de numAuras, retour a la ligne
         auraSize      = 20,
         -- Filtres d'auras PAR TYPE (buffs / debuffs), parametrables via /mf config :
         --   *OnlyMine = true : n'affiche que les auras lancees par le joueur.
@@ -222,7 +221,8 @@ ns.config = {
         combatSize    = 18,
         showBuffs     = true,
         showDebuffs   = true,
-        numAuras      = 6,
+        numAuras      = 6,        -- icones PAR LIGNE
+        maxAuraRows   = 3,        -- lignes max : au-dela de numAuras, retour a la ligne
         auraSize      = 20,
         -- Filtres d'auras par type (cf. doc du cadre `player`).
         buffOnlyMine   = false, debuffOnlyMine = false,
@@ -252,7 +252,8 @@ ns.config = {
         combatSize    = 18,
         showBuffs     = false,
         showDebuffs   = true,
-        numAuras      = 6,
+        numAuras      = 6,        -- icones PAR LIGNE
+        maxAuraRows   = 3,        -- lignes max : au-dela de numAuras, retour a la ligne
         auraSize      = 20,
         -- Filtres d'auras par type (cf. doc du cadre `player`).
         buffOnlyMine   = false, debuffOnlyMine = false,
