@@ -534,51 +534,145 @@ local function BuildSimpleText(frame)
     end
 end
 
--- Layout texte 3 ZONES (player/target, maquette) : nom+niveau a GAUCHE,
--- pourcentage CENTRE, PV actuel / max a DROITE. Ordre identique pour le joueur
--- ET la cible (on n'inverse PAS selon mirror : seules les barres/badge suivent
--- le miroir, pas l'ordre des colonnes de texte).
+-- Filet de securite (maquette v3, disposition empilee) : reduit la police du nom
+-- jusqu'a ce qu'il tienne dans la largeur disponible (de fontSize jusqu'a 7px), au
+-- lieu d'etre tronque par l'ellipsis. N'agit qu'en disposition empilee (le nom y a
+-- deux ancres horizontales -> GetWidth() donne la largeur dispo). Sans cout si le
+-- nom tient deja a sa taille nominale. Si la mise en page n'est pas encore resolue
+-- (GetWidth ~ 0), on s'abstient : l'ellipsis sert de repli en attendant le prochain
+-- UpdateName (changement de cible / nom), ou la passe differee de ns:SetTextLayout.
+local NAME_MIN_FONT = 7
+local function FitNameToWidth(frame)
+    local name = frame.nameText
+    if not name then return end
+    local avail = name:GetWidth()
+    if not avail or avail <= 1 then return end
+    local maxS = frame.config.fontSize or 11
+    ns.ApplyFont(name, maxS, "OUTLINE")
+    local size = maxS
+    while size > NAME_MIN_FONT and name:GetStringWidth() > avail do
+        size = size - 0.5
+        ns.ApplyFont(name, size, "OUTLINE")
+    end
+end
+Elements.FitNameToWidth = FitNameToWidth
+
+-- Place/dimensionne les FontStrings du layout riche (nom / niveau / % / PV) selon
+-- ns.config.textLayout. RE-JOUABLE A CHAUD (bascule de disposition sans /reload) :
+-- on efface les ancres et on re-applique tailles + points. Les deux dispositions
+-- reutilisent les MEMES FontStrings ; seules positions/tailles/justifications
+-- different (le CONTENU est identique, donc UpdateHealth/UpdateName/UpdatePower
+-- restent inchangees). Les couleurs sont posees une fois a la construction.
+-- frame.stackedText memorise le mode (auto-fit du nom dans UpdateName).
+--
+--   "stacked" (maquette v3) : nom pleine largeur en haut + niveau a droite ;
+--                             pourcentage (gauche) et PV (droite) sur la ligne du bas.
+--   "classic" (historique)  : nom+niveau a gauche, pourcentage centre, PV a droite.
+-- modeOverride (optionnel) : force "classic"/"stacked" sans toucher au reglage
+-- global (utilise par les cartes d'apercu de /mf config qui montrent les DEUX
+-- dispositions cote a cote). Absent => suit ns.config.textLayout.
+function Elements.LayoutRichText(frame, modeOverride)
+    if not frame.richText then return end
+    local cfg = frame.config
+    local fontSize = cfg.fontSize or 11
+    local stacked = ((modeOverride or ns.config.textLayout) == "stacked")
+    frame.stackedText = stacked
+
+    local name, level = frame.nameText, frame.levelText
+    local hp, hpmax, pct = frame.healthText, frame.healthMaxText, frame.percentText
+    local health = frame.health
+
+    for _, fs in ipairs({ name, level, hp, hpmax, pct }) do
+        fs:ClearAllPoints()
+        fs:SetWidth(0)
+    end
+
+    if stacked then
+        -- row = decalage vertical (depuis le centre de la barre) de chaque ligne :
+        -- ligne du haut a +row, ligne du bas a -row => espacement inter-lignes = 2*row.
+        local pad, row = 7, 7
+        -- Taille des PV bas-droite : un cran sous le nom/% (suit cfg.fontSize).
+        local hpSize = math.max(9, fontSize - 2)
+        -- Niveau : haut-droite, petit (9px, ffdf9b)
+        ns.ApplyFont(level, 9, "OUTLINE")
+        level:SetJustifyH("RIGHT")
+        level:SetPoint("RIGHT", health, "RIGHT", -pad, row)
+        -- Nom : ligne du haut, de la gauche jusqu'a la gauche du niveau (ellipsis ou
+        -- auto-fit via FitNameToWidth). Deux ancres horizontales => largeur implicite.
+        ns.ApplyFont(name, fontSize, "OUTLINE")
+        name:SetJustifyH("LEFT")
+        name:SetPoint("LEFT", health, "LEFT", pad, row)
+        name:SetPoint("RIGHT", level, "LEFT", -4, 0)
+        -- Pourcentage : bas-gauche (12px, maquette)
+        ns.ApplyFont(pct, 12, "OUTLINE")
+        pct:SetJustifyH("LEFT")
+        pct:SetPoint("LEFT", health, "LEFT", pad, -row)
+        -- PV : bas-droite, "actuel" suivi de "/ max" cote a cote
+        ns.ApplyFont(hpmax, hpSize, "OUTLINE")
+        hpmax:SetJustifyH("RIGHT")
+        hpmax:SetPoint("RIGHT", health, "RIGHT", -pad, -row)
+        ns.ApplyFont(hp, hpSize, "OUTLINE")
+        hp:SetJustifyH("RIGHT")
+        hp:SetPoint("RIGHT", hpmax, "LEFT", -3, 0)
+    else
+        -- Colonne nom (blanc) + niveau (or) a gauche, calee autour du centre vertical
+        ns.ApplyFont(name, fontSize, "OUTLINE")
+        name:SetJustifyH("LEFT")
+        name:SetWidth((cfg.width or 190) * 0.44)    -- text-overflow:ellipsis -> troncature
+        name:SetPoint("LEFT", health, "LEFT", 7, 6)
+
+        ns.ApplyFont(level, math.max(8, fontSize - 2), "OUTLINE")
+        level:SetJustifyH("LEFT")
+        level:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -1)
+
+        -- Colonne PV actuel (blanc) + / max (creme) a droite
+        ns.ApplyFont(hp, fontSize, "OUTLINE")
+        hp:SetJustifyH("RIGHT")
+        hp:SetPoint("RIGHT", health, "RIGHT", -7, 6)
+
+        ns.ApplyFont(hpmax, math.max(8, fontSize - 2), "OUTLINE")
+        hpmax:SetJustifyH("RIGHT")
+        hpmax:SetPoint("TOPRIGHT", hp, "BOTTOMRIGHT", 0, -1)
+
+        -- Pourcentage centre (plus gros)
+        ns.ApplyFont(pct, fontSize + 4, "OUTLINE")
+        pct:SetJustifyH("CENTER")
+        pct:SetPoint("CENTER", health, "CENTER", 0, 0)
+    end
+end
+
+-- Layout texte des cadres riches (player/target/focus). Cree les FontStrings
+-- (couleurs + word-wrap communs aux deux dispositions) puis delegue le
+-- positionnement a LayoutRichText selon ns.config.textLayout.
 local function BuildRichText(frame)
     local cfg = frame.config
     local health = frame.health
     local fontSize = cfg.fontSize or 11
 
-    -- Colonne nom (blanc) + niveau (or) a gauche, calee autour du centre vertical
     local name = NewText(health, fontSize)
     name:SetTextColor(1, 1, 1)
-    name:SetJustifyH("LEFT")
     name:SetWordWrap(false)
-    name:SetWidth((cfg.width or 190) * 0.44)        -- text-overflow:ellipsis -> troncature
-    name:SetPoint("LEFT", health, "LEFT", 7, 6)
     frame.nameText = name
     if cfg.showName == false then name:Hide() end
 
-    local level = NewText(health, math.max(8, fontSize - 2))
+    local level = NewText(health, fontSize)
     level:SetTextColor(1.0, 0.875, 0.608)           -- ffdf9b
-    level:SetJustifyH("LEFT")
-    level:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -1)
+    level:SetWordWrap(false)
     frame.levelText = level
 
-    -- Colonne PV actuel (blanc) + / max (creme) a droite
     local hp = NewText(health, fontSize)
     hp:SetTextColor(1, 1, 1)
-    hp:SetJustifyH("RIGHT")
-    hp:SetPoint("RIGHT", health, "RIGHT", -7, 6)
     frame.healthText = hp
 
-    local hpmax = NewText(health, math.max(8, fontSize - 2))
+    local hpmax = NewText(health, fontSize)
     hpmax:SetTextColor(0.914, 0.886, 0.847)         -- e9e2d8
-    hpmax:SetJustifyH("RIGHT")
-    hpmax:SetPoint("TOPRIGHT", hp, "BOTTOMRIGHT", 0, -1)
     frame.healthMaxText = hpmax
 
-    -- Pourcentage centre (plus gros)
-    local pct = NewText(health, fontSize + 4)
+    local pct = NewText(health, fontSize)
     pct:SetTextColor(1, 1, 1)
-    pct:SetPoint("CENTER", health, "CENTER", 0, 0)
     frame.percentText = pct
 
-    -- Textes de ressource : cur/max a gauche, % a droite
+    -- Textes de ressource : cur/max a gauche, % a droite (communs aux 2 dispositions)
     if frame.power then
         local psize = math.max(8, fontSize - 3)
         local pcur = NewText(frame.power, psize)
@@ -595,6 +689,7 @@ local function BuildRichText(frame)
     end
 
     frame.richText = true
+    Elements.LayoutRichText(frame)
 end
 
 -- Construit barres + textes (appele a la creation de chaque frame/bouton)
@@ -1093,6 +1188,9 @@ function Elements.UpdateName(frame)
                 frame.levelText:SetText("")
             end
         end
+        -- Disposition empilee : ajuste la taille du nom apres avoir pose nom ET
+        -- niveau (le bord droit du nom depend de la largeur du niveau).
+        if frame.stackedText then FitNameToWidth(frame) end
         return
     end
 

@@ -130,6 +130,17 @@ ns.config = {
     -- Rapport dark/light ~= 0.72 reproduit l'ecart de l'exemple (145,105,64)->(199,145,84).
     barGradient = { dark = 0.72, light = 1.0, orientation = "HORIZONTAL" },
 
+    -- Disposition des textes des cadres riches (player / target / focus) :
+    --   "classic" = nom + niveau a gauche, pourcentage centre (gros), PV a droite
+    --               (disposition historique).
+    --   "stacked" = nom sur toute la largeur en haut + niveau a droite ; pourcentage
+    --               (gauche) et PV (droite) sur la ligne du bas (maquette v3). Le nom
+    --               retrecit automatiquement (filet de securite, 11 -> 7px) au lieu
+    --               d'etre tronque s'il deborde.
+    -- Reglage GLOBAL (s'applique aux 3 cadres riches). Modifiable a chaud via
+    -- /mf config (onglet "Affichage"), sauvegarde dans MarcelFramerDB.textLayout.
+    textLayout = "stacked",
+
     -- ----------------------------------------------------------------------
     --  Style "maquette" : couleurs de piste + reflets (gloss) + badge combat
     -- ----------------------------------------------------------------------

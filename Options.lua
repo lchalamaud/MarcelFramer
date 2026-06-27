@@ -981,6 +981,124 @@ local function buildAurasPanel(panel)
     refreshAurasPanel()
 end
 
+-- ============================================================================
+--  Section AFFICHAGE (onglet "Affichage") : disposition des textes des cadres
+--  riches (player / target / focus). Reglage GLOBAL, applique a chaud via
+--  ns:SetTextLayout. Au lieu d'un menu, on montre les DEUX dispositions sous forme
+--  de mini-cadres d'apercu CLIQUABLES (rendus avec les vraies briques d'Elements,
+--  donc fideles). Un clic selectionne la disposition ; la carte active a un liseré
+--  doré.
+-- ============================================================================
+local displayState = { cards = {} }
+local refreshDisplayPanel   -- forward-declare (reference par buildLayoutCard ci-dessous)
+
+-- Remplit un mini-cadre d'apercu avec des valeurs d'exemple statiques (pas d'unite
+-- reelle : on pose directement barres + textes, sans passer par Update*).
+local function fillLayoutPreview(pf)
+    local col = (ns.classBarColors and ns.classBarColors.MAGE) or { 0.22, 0.68, 0.81 }
+    pf.health:SetMinMaxValues(0, 1)
+    pf.health:SetValue(0.65)
+    ns.Elements.PaintBar(pf.health, col[1], col[2], col[3], col[1], col[2], col[3])
+    if pf.power then
+        pf.power:SetMinMaxValues(0, 1)
+        pf.power:SetValue(0.80)
+        ns.Elements.PaintResource(pf.power, 0, "MANA")
+    end
+    if pf.nameText      then pf.nameText:SetText("Aethwyn")    end
+    if pf.levelText     then pf.levelText:SetText("70")        end
+    if pf.percentText   then pf.percentText:SetText("65%")     end
+    if pf.healthText    then pf.healthText:SetText("2.4k")     end
+    if pf.healthMaxText then pf.healthMaxText:SetText("/ 3.6k") end
+    if pf.powerText     then pf.powerText:SetText("2.4k / 3.0k") end
+    if pf.powerPctText  then pf.powerPctText:SetText("80%")    end
+end
+
+-- Couleurs de bordure de carte selon l'etat.
+local CARD_BORDER = {
+    selected = { 1, 0.82, 0, 1 },      -- doré = disposition active
+    hover    = { 1, 1, 1, 0.7 },
+    idle     = { 0.4, 0.4, 0.4, 0.8 },
+}
+local function setCardBorder(card, state)
+    local c = CARD_BORDER[state]
+    card:SetBackdropBorderColor(c[1], c[2], c[3], c[4])
+end
+
+-- Construit une carte d'apercu cliquable pour une disposition donnee (mode).
+local function buildLayoutCard(panel, mode, label, anchorY)
+    local card = CreateFrame("Button", nil, panel, "BackdropTemplate")
+    card:SetSize(232, 78)
+    card:SetPoint("TOPLEFT", 12, anchorY)
+    card.mode = mode
+    card:SetBackdrop({
+        bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileSize = 16, edgeSize = 12,
+        insets = { left = 3, right = 3, top = 3, bottom = 3 },
+    })
+    card:SetBackdropColor(0.06, 0.05, 0.04, 0.9)
+    setCardBorder(card, "idle")
+
+    -- Mini-cadre rendu avec les vraies briques (BuildVisuals) + mode force.
+    local pf = CreateFrame("Frame", nil, card)
+    pf.unitType = "player"
+    pf.config = {
+        width = 190, height = 45, fontSize = 12,
+        powerRatio = 0.22, classColor = true,
+        showPower = true, showName = true, showLevel = true,
+        showPercent = true, showHealthValue = true, showPowerText = true,
+    }
+    pf:SetSize(190, 45)
+    pf:SetPoint("LEFT", card, "LEFT", 6, 0)
+    ns.Elements.BuildVisuals(pf)
+    ns.Elements.LayoutRichText(pf, mode)     -- force la disposition de CETTE carte
+    fillLayoutPreview(pf)
+
+    local lbl = card:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    lbl:SetPoint("TOPLEFT", pf, "BOTTOMLEFT", 0, -6)
+    lbl:SetText(label)
+
+    card:SetScript("OnClick", function(self)
+        ns:SetTextLayout(self.mode)
+        refreshDisplayPanel()
+    end)
+    card:SetScript("OnEnter", function(self)
+        if not self.selected then setCardBorder(self, "hover") end
+    end)
+    card:SetScript("OnLeave", function(self)
+        if not self.selected then setCardBorder(self, "idle") end
+    end)
+
+    displayState.cards[#displayState.cards + 1] = card
+    return card
+end
+
+refreshDisplayPanel = function()
+    local mode = (ns.config.textLayout == "stacked") and "stacked" or "classic"
+    for _, card in ipairs(displayState.cards) do
+        card.selected = (card.mode == mode)
+        setCardBorder(card, card.selected and "selected" or "idle")
+    end
+end
+
+local function buildDisplayPanel(panel)
+    local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    title:SetPoint("TOPLEFT", 4, -8)
+    title:SetText("Disposition des textes")
+
+    local intro = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    intro:SetPoint("TOPLEFT", 8, -30)
+    intro:SetWidth(390)
+    intro:SetJustifyH("LEFT")
+    intro:SetText("Cliquez sur la disposition souhaitee (cadres Joueur / Cible / Focalisation). "
+        .. "Apercu live, applique immediatement.")
+
+    buildLayoutCard(panel, "classic", "Classique", -70)
+    buildLayoutCard(panel, "stacked", "Empilee",   -174)
+
+    refreshDisplayPanel()
+end
+
 -- ----------------------------------------------------------------------------
 --  Onglets : affichage / bascule
 -- ----------------------------------------------------------------------------
@@ -1043,6 +1161,7 @@ local function build()
     makeMenuButton("Cadres", 3)
     makeMenuButton("Barre de cast", 4)
     makeMenuButton("Auras", 5)
+    makeMenuButton("Affichage", 6)
 
     local divider = frame:CreateTexture(nil, "ARTWORK")
     divider:SetColorTexture(1, 1, 1, 0.12)
@@ -1056,11 +1175,13 @@ local function build()
     buildFramesPanel(makePanel())
     buildCastPanel(makePanel())
     buildAurasPanel(makePanel())
+    buildDisplayPanel(makePanel())
 
     refreshColors()
     refreshSizeSliders()
     refreshCastState()
     refreshAurasPanel()
+    refreshDisplayPanel()
     updateLockButton()
     showTab(1)
 
@@ -1079,6 +1200,7 @@ function ns.Options.Toggle()
         refreshSizeSliders()
         refreshCastState()
         refreshAurasPanel()
+        refreshDisplayPanel()
         updateLockButton()
         frame:Show()
     end
