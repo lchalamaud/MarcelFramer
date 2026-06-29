@@ -211,6 +211,7 @@ end
 function ns:ApplySavedColors()
     local db = MarcelFramerDB
     if db.barStyle then ns.config.barStyle = db.barStyle end
+    if db.textLayout then ns.config.textLayout = db.textLayout end
     if db.classBarColors then
         for class, c in pairs(db.classBarColors) do
             -- Compat ancien format {left,right} : on conserve la teinte "right".
@@ -251,6 +252,41 @@ function ns:RefreshAll()
             E.UpdateName(frame)
             if frame.castBar then E.CastBarCheck(frame) end
         end
+    end
+end
+
+-- ----------------------------------------------------------------------------
+--  Disposition des textes (player/target/focus) : preference globale + bascule live
+-- ----------------------------------------------------------------------------
+-- Bascule a chaud la disposition des textes : "classic" ou "stacked". Re-ancre les
+-- FontStrings des cadres riches (LayoutRichText) puis rafraichit le contenu. Les
+-- FontStrings ne sont pas proteges : pas de restriction de combat. Une passe
+-- differee (C_Timer) relance UpdateName une fois la mise en page resolue, pour que
+-- l'auto-fit du nom (disposition empilee) dispose de la largeur reelle.
+function ns:SetTextLayout(mode)
+    mode = (mode == "stacked") and "stacked" or "classic"
+    ns.config.textLayout = mode
+    MarcelFramerDB.textLayout = mode
+
+    local E = ns.Elements
+    if not (E and E.LayoutRichText) then return end
+    for _, data in pairs(ns.registry) do
+        local frame = data.frame
+        if frame.richText then
+            E.LayoutRichText(frame)
+            E.UpdateHealth(frame)
+            E.UpdateName(frame)
+        end
+    end
+
+    -- Re-fit du nom apres resolution de la mise en page (largeur dispo connue).
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function()
+            for _, data in pairs(ns.registry) do
+                local frame = data.frame
+                if frame.richText then E.UpdateName(frame) end
+            end
+        end)
     end
 end
 
