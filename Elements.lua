@@ -557,6 +557,36 @@ local function FitNameToWidth(frame)
 end
 Elements.FitNameToWidth = FitNameToWidth
 
+-- (Re)pose les ancres horizontales du NOM des cadres riches selon la disposition ET
+-- la presence de l'icone de classification : icone visible => le nom commence apres
+-- elle ; sinon il s'aligne sur le bord gauche du cadre (meme x que les cadres sans
+-- icone, ex. player). Source unique de verite, appelee par LayoutRichText (mise en
+-- page) ET par UpdateClassification (apparition/disparition de l'icone) — c'est ce
+-- qui evite le decalage du nom sur les unites sans dragon.
+local function AnchorRichName(frame)
+    local name = frame.nameText
+    if not name then return end
+    local health = frame.health
+    local hasIcon = frame.classIcon and frame.classIcon:IsShown()
+    name:ClearAllPoints()
+    if frame.stackedText then
+        if hasIcon then
+            name:SetPoint("LEFT", frame.classIcon, "RIGHT", 2, 0)
+        else
+            name:SetPoint("LEFT", health, "LEFT", 7, 7)
+        end
+        name:SetPoint("RIGHT", frame.levelText, "LEFT", -4, 0)
+        FitNameToWidth(frame)   -- la largeur dispo a change : re-ajuste la taille
+    else
+        if hasIcon then
+            name:SetPoint("LEFT", frame.classIcon, "RIGHT", 3, 0)
+        else
+            name:SetPoint("LEFT", health, "LEFT", 7, 6)
+        end
+    end
+end
+Elements.AnchorRichName = AnchorRichName
+
 -- Place/dimensionne les FontStrings du layout riche (nom / niveau / % / PV) selon
 -- ns.config.textLayout. RE-JOUABLE A CHAUD (bascule de disposition sans /reload) :
 -- on efface les ancres et on re-applique tailles + points. Les deux dispositions
@@ -601,8 +631,14 @@ function Elements.LayoutRichText(frame, modeOverride)
         -- auto-fit via FitNameToWidth). Deux ancres horizontales => largeur implicite.
         ns.ApplyFont(name, fontSize, "OUTLINE")
         name:SetJustifyH("LEFT")
-        name:SetPoint("LEFT", health, "LEFT", pad, row)
-        name:SetPoint("RIGHT", level, "LEFT", -4, 0)
+        -- Icone de classification a gauche du nom (bord gauche de la ligne du haut).
+        if frame.classIcon then
+            frame.classIcon:ClearAllPoints()
+            frame.classIcon:SetPoint("LEFT", health, "LEFT", pad, row)
+        end
+        -- Ancres du nom (LEFT selon icone visible, RIGHT avant le niveau) : centralise
+        -- dans AnchorRichName pour rester coherent avec UpdateClassification.
+        AnchorRichName(frame)
         -- Pourcentage : bas-gauche (12px, maquette)
         ns.ApplyFont(pct, 12, "OUTLINE")
         pct:SetJustifyH("LEFT")
@@ -615,11 +651,19 @@ function Elements.LayoutRichText(frame, modeOverride)
         hp:SetJustifyH("RIGHT")
         hp:SetPoint("RIGHT", hpmax, "LEFT", -3, 0)
     else
-        -- Colonne nom (blanc) + niveau (or) a gauche, calee autour du centre vertical
+        -- Colonne nom (blanc) + niveau (or) a gauche, calee autour du centre vertical.
+        -- Icone de classification a gauche du nom : on reserve sa largeur en
+        -- retrecissant un peu le nom (largeur fixe a ellipsis) pour ne pas empieter
+        -- sur le pourcentage centre.
         ns.ApplyFont(name, fontSize, "OUTLINE")
         name:SetJustifyH("LEFT")
-        name:SetWidth((cfg.width or 190) * 0.44)    -- text-overflow:ellipsis -> troncature
-        name:SetPoint("LEFT", health, "LEFT", 7, 6)
+        name:SetWidth((cfg.width or 190) * 0.44 - (frame.classIcon and 18 or 0))
+        if frame.classIcon then
+            frame.classIcon:ClearAllPoints()
+            frame.classIcon:SetPoint("LEFT", health, "LEFT", 6, 6)
+        end
+        -- Ancre gauche du nom (apres l'icone si visible, sinon bord du cadre).
+        AnchorRichName(frame)
 
         ns.ApplyFont(level, math.max(8, fontSize - 2), "OUTLINE")
         level:SetJustifyH("LEFT")
@@ -639,6 +683,74 @@ function Elements.LayoutRichText(frame, modeOverride)
         pct:SetJustifyH("CENTER")
         pct:SetPoint("CENTER", health, "CENTER", 0, 0)
     end
+end
+
+-- ----------------------------------------------------------------------------
+--  Icone de classification (dragon facon nameplate) — posee A GAUCHE du nom.
+--  Reprend l'artwork "dragon" Blizzard via les atlas de nameplate :
+--    worldboss -> dragon OR + halo scintillant (star4)  [le seul a pulser]
+--    elite     -> dragon OR
+--    rare/rareelite -> dragon ARGENT
+--    normal/minus   -> rien (icone masquee)
+-- ----------------------------------------------------------------------------
+local CLASS_GOLD       = "nameplates-icon-elite-gold"
+local CLASS_SILVER     = "nameplates-icon-elite-silver"
+local CLASS_GLOW_TEX   = "Interface\\Cooldown\\star4"   -- etoile 4 branches (scintille)
+local CLASS_GLOW_COLOR = { 1, 0.82, 0.25 }              -- teinte or du halo
+local CLASSIFICATIONS  = {
+    worldboss = { atlas = CLASS_GOLD,   glow = true },
+    elite     = { atlas = CLASS_GOLD },
+    rareelite = { atlas = CLASS_SILVER },
+    rare      = { atlas = CLASS_SILVER },
+}
+
+-- Scintillement DOUX du halo worldboss : simple pulsation d'alpha de faible
+-- amplitude (PAS de rotation). Pilote par une frame-ticker (frame.classAnim) active
+-- seulement quand le halo est affiche (cf. UpdateClassification) : aucun cout hors
+-- worldboss.
+local CLASS_PULSE_PERIOD = 2.0   -- secondes par cycle de pulsation
+local CLASS_ALPHA_MIN    = 0.38  -- bornes d'alpha resserrees autour de 0.55
+local CLASS_ALPHA_MAX    = 0.62
+local TWO_PI = math.pi * 2
+local function ClassGlow_OnUpdate(self, elapsed)
+    local t = (self.t or 0) + elapsed
+    self.t = t
+    local k = 0.5 * (1 + math.sin(t / CLASS_PULSE_PERIOD * TWO_PI))
+    self.glow:SetAlpha(CLASS_ALPHA_MIN + (CLASS_ALPHA_MAX - CLASS_ALPHA_MIN) * k)
+end
+
+-- Cree la texture du dragon (+ son halo star4). Posee sur la barre de vie, son
+-- placement exact (avant le niveau) est gere par LayoutRichText. Masquee tant que
+-- UpdateClassification n'a pas valide une classification "interessante".
+local function BuildClassIcon(frame)
+    local size = frame.config.classSize or 16
+
+    -- Halo scintillant (sous le dragon), additif et teinte or. Fige (le "C4"
+    -- choisi). N'apparait que pour les worldboss (cf. UpdateClassification).
+    local glow = frame.health:CreateTexture(nil, "OVERLAY", nil, 1)
+    glow:SetTexture(CLASS_GLOW_TEX)
+    glow:SetBlendMode("ADD")
+    glow:SetVertexColor(CLASS_GLOW_COLOR[1], CLASS_GLOW_COLOR[2], CLASS_GLOW_COLOR[3])
+    glow:SetAlpha(0.55)
+    glow:SetSize(size * 1.9, size * 1.9)
+    glow:Hide()
+    frame.classGlow = glow
+
+    local icon = frame.health:CreateTexture(nil, "OVERLAY", nil, 2)
+    icon:SetSize(size, size)
+    icon:Hide()
+    frame.classIcon = icon
+
+    glow:SetPoint("CENTER", icon, "CENTER")
+
+    -- Ticker d'animation du halo (rotation + pulsation douces). Une frame ne
+    -- declenche OnUpdate que tant qu'elle est affichee : on l'active/desactive via
+    -- Show/Hide (UpdateClassification).
+    local anim = CreateFrame("Frame", nil, frame.health)
+    anim.glow = glow
+    anim:SetScript("OnUpdate", ClassGlow_OnUpdate)
+    anim:Hide()
+    frame.classAnim = anim
 end
 
 -- Layout texte des cadres riches (player/target/focus). Cree les FontStrings
@@ -687,6 +799,9 @@ local function BuildRichText(frame)
         ppct:SetPoint("RIGHT", frame.power, "RIGHT", -7, 0)
         frame.powerPctText = ppct
     end
+
+    -- Icone de classification (dragon elite/rare) avant le niveau, si demandee.
+    if cfg.showClassification then BuildClassIcon(frame) end
 
     frame.richText = true
     Elements.LayoutRichText(frame)
@@ -1319,6 +1434,44 @@ function Elements.UpdateAuras(frame)
     end
 end
 
+-- Affiche le dragon de classification (worldboss/elite/rare) a gauche du nom.
+-- Quand l'unite est "normale", l'icone est masquee ET retrecie (largeur ~0) pour
+-- que le nom recupere la place (le nom est ancre sur le bord droit de l'icone).
+-- Le halo scintillant + son fond sombre n'apparaissent que pour le worldboss.
+function Elements.UpdateClassification(frame)
+    local icon = frame.classIcon
+    if not icon then return end
+    local glow, anim = frame.classGlow, frame.classAnim
+    local unit = frame.unit
+    local info
+    if unit and UnitExists(unit) then
+        local classification = UnitClassification(unit)
+        -- Beaucoup de world boss (Sha de la colere, Galleon...) renvoient "elite"
+        -- + un niveau ?? (UnitLevel == -1), PAS "worldboss". Le niveau ?? est donc
+        -- le vrai signal "boss" : on le promeut au traitement worldboss (or + halo).
+        if classification == "worldboss" or UnitLevel(unit) == -1 then
+            info = CLASSIFICATIONS.worldboss
+        else
+            info = CLASSIFICATIONS[classification]
+        end
+    end
+    if not info then
+        icon:Hide()
+        if glow then glow:Hide() end
+        if anim then anim:Hide() end   -- coupe le ticker d'animation
+        AnchorRichName(frame)          -- nom realigne sur le bord gauche (pas d'icone)
+        return
+    end
+    local size = frame.config.classSize or 16
+    icon:SetAtlas(info.atlas)     -- pas de redimensionnement auto (useAtlasSize omis)
+    icon:SetSize(size, size)
+    icon:Show()
+    local showGlow = info.glow and true or false
+    if glow then if showGlow then glow:Show() else glow:Hide() end end
+    if anim then if showGlow then anim:Show() else anim:Hide() end end
+    AnchorRichName(frame)          -- nom decale a droite de l'icone
+end
+
 -- Affiche/masque l'icone de combat selon l'etat de l'unite de la frame.
 function Elements.UpdateCombat(frame)
     if not frame.combatIcon then return end
@@ -1336,6 +1489,7 @@ function Elements.FullUpdate(frame)
     Elements.UpdateHealth(frame)
     Elements.UpdatePower(frame)
     Elements.UpdateName(frame)
+    Elements.UpdateClassification(frame)
     Elements.UpdateAuras(frame)
     Elements.UpdateCombat(frame)
     if frame.castBar then Elements.CastBarCheck(frame) end
@@ -1348,7 +1502,7 @@ local UNIT_EVENTS = {
     "UNIT_HEALTH", "UNIT_MAXHEALTH",
     "UNIT_POWER_UPDATE", "UNIT_MAXPOWER", "UNIT_DISPLAYPOWER",
     "UNIT_AURA", "UNIT_NAME_UPDATE", "UNIT_LEVEL",
-    "UNIT_FLAGS",
+    "UNIT_FLAGS", "UNIT_CLASSIFICATION_CHANGED",
 }
 
 function Elements.RegisterUnitEvents(frame)
@@ -1374,5 +1528,7 @@ function Elements.OnEvent(self, event, arg1)
         Elements.UpdateName(self)
     elseif event == "UNIT_FLAGS" then
         Elements.UpdateCombat(self)
+    elseif event == "UNIT_CLASSIFICATION_CHANGED" then
+        Elements.UpdateClassification(self)
     end
 end
