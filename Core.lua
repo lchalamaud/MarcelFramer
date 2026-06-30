@@ -343,6 +343,11 @@ function ns:ApplySize(key)
     frame:SetSize(cfg.width, cfg.height)
     frame:SetScale(cfg.scale or 1)
     if ns.Elements and ns.Elements.LayoutBars then ns.Elements.LayoutBars(frame) end
+    -- La largeur du segment bouclier est en pixels (proportionnelle a la largeur de
+    -- barre) : la recalculer apres un changement de taille (cf. UpdateHealth).
+    if ns.Elements and ns.Elements.UpdateHealth and frame.unit and UnitExists(frame.unit) then
+        ns.Elements.UpdateHealth(frame)
+    end
     local mover = ns.movers[key]
     if mover then
         mover:SetSize(cfg.width, cfg.height)
