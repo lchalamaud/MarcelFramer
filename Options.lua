@@ -774,6 +774,7 @@ local function refreshAuraColumn(kind)
 end
 
 local function refreshAurasPanel()
+    if auraState.updatePreviewLabel then auraState.updatePreviewLabel() end
     if not auraState.currentKey then return end
     for key, btn in pairs(auraState.selButtons) do
         if key == auraState.currentKey then btn:LockHighlight() else btn:UnlockHighlight() end
@@ -949,6 +950,27 @@ local function buildAurasPanel(panel)
     local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOPLEFT", 4, -8)
     title:SetText("Affichage des auras")
+
+    -- Bouton apercu : remplit les rangees d'auras factices (meme effet que
+    -- /mf auratest) pour visualiser la disposition sans cible chargee d'auras.
+    local preview = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    preview:SetSize(130, 22)
+    preview:SetPoint("TOPRIGHT", -4, -4)
+    local function updatePreviewLabel()
+        preview:SetText(ns.auraPreview and "Apercu auras : ON" or "Apercu auras : OFF")
+    end
+    preview:SetScript("OnClick", function()
+        ns:AuraTest()
+        updatePreviewLabel()
+    end)
+    preview:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        GameTooltip:SetText("Remplit les cadres visibles d'auras factices", 1, 1, 1, 1, true)
+        GameTooltip:AddLine("Cible n'importe quoi pour voir le cadre cible.", 0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+    end)
+    preview:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    auraState.updatePreviewLabel = updatePreviewLabel
 
     -- Cadres proposes : ceux qui ont au moins une case d'aura (numAuras > 0).
     wipe(auraState.keys)
@@ -1146,6 +1168,11 @@ local function build()
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+    -- Apercu d'auras lie a la fenetre : on coupe les auras factices a la fermeture
+    -- (close, Echap ou /mf config) pour ne pas laisser de buffs fantomes.
+    frame:SetScript("OnHide", function()
+        if ns.auraPreview then ns:AuraTest(false) end
+    end)
     tinsert(UISpecialFrames, "MarcelFramerOptions")   -- fermeture avec Echap
 
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")

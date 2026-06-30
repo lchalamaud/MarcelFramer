@@ -944,7 +944,18 @@ function Elements.AnchorAuraRow(frame, icons, kind)
     if perRow < 1 then perRow = #icons end
 
     local horizontal = (a.growth == "RIGHT" or a.growth == "LEFT")
-    local rowStep = (frame.config.auraSize or 18) + 3
+    -- Hauteur effective d'une ligne : avec l'option "les miennes plus grosses",
+    -- une ligne peut contenir des icones agrandies (mineSize). On dimensionne donc
+    -- le pas inter-lignes sur la plus grande taille possible, sinon la ligne
+    -- suivante chevauche les icones agrandies de la precedente.
+    local baseSize = frame.config.auraSize or 18
+    local bigMine = (kind == "buffs") and frame.config.buffBigMine
+        or (kind == "debuffs") and frame.config.debuffBigMine
+    local rowSize = baseSize
+    if bigMine then
+        rowSize = math.floor(baseSize * (frame.config.auraMineScale or 1.3) + 0.5)
+    end
+    local rowStep = rowSize + 3
     local rdx, rdy = 0, 0
     if horizontal then
         rdy = ((a.point or ""):sub(1, 3) == "TOP") and -rowStep or rowStep
@@ -1350,6 +1361,54 @@ local function AuraIsMine(source)
     return source == "player" or source == "vehicle"
 end
 
+-- Mode apercu (/mf auratest) : vraies icones de sort (existent sur ce client)
+-- pour remplir les rangees sans dependre des auras reelles d'une unite. Permet
+-- de tester la disposition (multi-lignes, "les miennes plus grosses") a froid.
+-- On fait tourner la liste pour que chaque case ait une icone differente.
+local PREVIEW_ICONS = {
+    "Interface\\Icons\\Spell_Holy_PowerWordShield",
+    "Interface\\Icons\\Spell_Nature_Rejuvenation",
+    "Interface\\Icons\\Spell_Fire_FlameBolt",
+    "Interface\\Icons\\Spell_Frost_FrostBolt02",
+    "Interface\\Icons\\Ability_Warrior_BattleShout",
+    "Interface\\Icons\\Spell_Holy_Renew",
+    "Interface\\Icons\\Spell_Shadow_ShadowWordPain",
+    "Interface\\Icons\\Ability_Rogue_SliceDice",
+    "Interface\\Icons\\Spell_Nature_Lightning",
+    "Interface\\Icons\\Spell_Holy_FlashHeal",
+}
+
+-- Remplit TOUTES les cases d'une rangee avec des donnees factices, en respectant
+-- les memes regles de taille que FillAuras (onlyMine => tout est mien ; sinon les
+-- 4 PREMIERES cases sont miennes, comme l'affichage reel qui groupe les miennes
+-- en tete : on a donc 4 icones agrandies en debut de rangee avec bigMine).
+local PREVIEW_MINE_COUNT = 4
+local function FillAurasPreview(icons, isDebuff, opts)
+    local n = #icons
+    local onlyMine = opts and opts.onlyMine
+    local bigMine  = opts and opts.bigMine
+    local baseSize = (opts and opts.baseSize) or 18
+    local mineSize = (opts and opts.mineSize) or baseSize
+    for slot = 1, n do
+        local btn = icons[slot]
+        local mine = onlyMine or (slot <= PREVIEW_MINE_COUNT)
+        local sz = (bigMine and mine) and mineSize or baseSize
+        btn:SetSize(sz, sz)
+        btn.tex:SetTexture(PREVIEW_ICONS[(slot - 1) % #PREVIEW_ICONS + 1])
+        -- Quelques stacks pour exercer aussi l'affichage du compteur.
+        if slot % 4 == 0 then btn.count:SetText(tostring(slot % 9 + 1)) else btn.count:SetText("") end
+        btn.cd:Hide()
+        if isDebuff then
+            local c = DEBUFF_COLORS.none
+            btn.bd:SetColorTexture(c.r, c.g, c.b, 1)
+        end
+        -- Pas de tooltip d'aura reelle en preview.
+        btn.unit = nil
+        btn.auraIndex = nil
+        btn:Show()
+    end
+end
+
 -- Remplit une rangee d'icones. opts :
 --   onlyMine : ne retient que les auras lancees par le joueur
 --   bigMine  : agrandit (mineSize) les auras du joueur, les autres en baseSize
@@ -1409,20 +1468,31 @@ function Elements.UpdateAuras(frame)
     local cfg = frame.config
     local baseSize = cfg.auraSize or 18
     local mineSize = math.floor(baseSize * (cfg.auraMineScale or 1.3) + 0.5)
+    local preview = ns.auraPreview
     if frame.buffIcons then
         if cfg.showBuffs then
-            FillAuras(frame.buffIcons, unit, "HELPFUL", false, {
+            local opts = {
                 onlyMine = cfg.buffOnlyMine, bigMine = cfg.buffBigMine,
                 baseSize = baseSize, mineSize = mineSize,
-            })
+            }
+            if preview then
+                FillAurasPreview(frame.buffIcons, false, opts)
+            else
+                FillAuras(frame.buffIcons, unit, "HELPFUL", false, opts)
+            end
         else HideAll(frame.buffIcons) end
     end
     if frame.debuffIcons then
         if cfg.showDebuffs then
-            FillAuras(frame.debuffIcons, unit, "HARMFUL", true, {
+            local opts = {
                 onlyMine = cfg.debuffOnlyMine, bigMine = cfg.debuffBigMine,
                 baseSize = baseSize, mineSize = mineSize,
-            })
+            }
+            if preview then
+                FillAurasPreview(frame.debuffIcons, true, opts)
+            else
+                FillAuras(frame.debuffIcons, unit, "HARMFUL", true, opts)
+            end
         else HideAll(frame.debuffIcons) end
     end
 

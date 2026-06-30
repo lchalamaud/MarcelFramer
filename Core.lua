@@ -241,6 +241,26 @@ function ns:ApplySavedColors()
     end
 end
 
+-- Mode apercu d'auras (/mf auratest) : remplit les rangees buffs/debuffs de
+-- toutes les frames avec des icones factices pour tester la disposition (multi-
+-- lignes, "les miennes plus grosses") sans avoir besoin d'une cible chargee
+-- d'auras. Un second appel desactive et restaure les vraies auras.
+function ns:AuraTest(on)
+    if on == nil then on = not ns.auraPreview end
+    ns.auraPreview = on
+    local E = ns.Elements
+    for _, data in pairs(ns.registry) do
+        if data.frame.buffIcons or data.frame.debuffIcons then
+            E.UpdateAuras(data.frame)
+        end
+    end
+    if on then
+        MF_Print("apercu d'auras |cff00ff00active|r (factices). |cffffff00/mf auratest|r pour couper.")
+    else
+        MF_Print("apercu d'auras |cffff0000coupe|r.")
+    end
+end
+
 -- Re-applique couleurs de vie + nom sur toutes les frames (apercu live des reglages)
 function ns:RefreshAll()
     local E = ns.Elements
@@ -489,8 +509,10 @@ SlashCmdList["MARCELFRAMER"] = function(msg)
         ns:Reset()
     elseif msg == "config" or msg == "colors" or msg == "couleurs" then
         if ns.Options and ns.Options.Toggle then ns.Options.Toggle() end
+    elseif msg == "auratest" or msg == "testauras" then
+        ns:AuraTest()
     else
-        MF_Print("commandes : |cffffff00/mf config|r (couleurs), |cffffff00/mf unlock|r, |cffffff00/mf lock|r, |cffffff00/mf reset|r")
+        MF_Print("commandes : |cffffff00/mf config|r (couleurs), |cffffff00/mf unlock|r, |cffffff00/mf lock|r, |cffffff00/mf reset|r, |cffffff00/mf auratest|r")
     end
 end
 
