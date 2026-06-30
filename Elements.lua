@@ -280,17 +280,20 @@ end
 -- absorb/total JUSTE APRES le remplissage de vie. On l'ancre au bord meneur du
 -- remplissage (sa droite en normal, sa gauche en miroir) pour qu'il suive
 -- automatiquement la position de la vie ; seule sa largeur est (re)posee a chaque
--- UpdateHealth. Texture translucide blanc-bleute + fin lisere brillant sur le bord
--- exterieur. Masque tant qu'il n'y a pas d'absorption.
+-- UpdateHealth. Le segment reprend la couleur de classe (base) eclaircie par un
+-- voile blanc translucide (absorbTint) + fin lisere brillant sur le bord exterieur.
+-- Masque tant qu'il n'y a pas d'absorption.
 local function BuildAbsorb(frame)
     local bar = frame.health
     local fill = bar:GetStatusBarTexture()
     if not fill then return end
     local mirror = frame.config.mirror
 
+    -- Base du segment : peinte avec la COULEUR DE CLASSE dans UpdateHealth (comme
+    -- la barre de vie), opaque, pour que le bouclier reprenne la teinte de l'unite.
     local seg = bar:CreateTexture(nil, "ARTWORK", nil, 5)
     seg:SetTexture(ns.media.statusbar)
-    seg:SetVertexColor(0.85, 0.90, 1.0, 0.45)
+    seg:SetVertexColor(1, 1, 1, 1)
     if mirror then
         seg:SetPoint("TOPRIGHT", fill, "TOPLEFT", 0, 0)
         seg:SetPoint("BOTTOMRIGHT", fill, "BOTTOMLEFT", 0, 0)
@@ -301,8 +304,18 @@ local function BuildAbsorb(frame)
     seg:Hide()
     frame.absorb = seg
 
+    -- Voile blanc translucide par-dessus la base : eclaircit le segment vers le
+    -- blanc tout en laissant transparaitre la couleur de classe (l'alpha regle le
+    -- dosage). Couvre exactement la base (SetAllPoints), suit donc sa largeur.
+    local tint = bar:CreateTexture(nil, "ARTWORK", nil, 6)
+    tint:SetTexture(ns.media.statusbar)
+    tint:SetVertexColor(1, 1, 1, 0.6)
+    tint:SetAllPoints(seg)
+    tint:Hide()
+    frame.absorbTint = tint
+
     -- lisere 1px brillant sur le bord exterieur du segment (cote oppose a la vie)
-    local edge = bar:CreateTexture(nil, "ARTWORK", nil, 6)
+    local edge = bar:CreateTexture(nil, "ARTWORK", nil, 7)
     edge:SetColorTexture(1, 1, 1, 0.6)
     local outer = mirror and "LEFT" or "RIGHT"
     edge:SetPoint("TOP" .. outer, seg, "TOP" .. outer, 0, 0)
@@ -1312,24 +1325,29 @@ function Elements.UpdateHealth(frame)
     bar:SetMinMaxValues(0, total > 0 and total or 1)
     bar:SetValue(cur)
 
-    -- Largeur du segment bouclier, proportionnelle a absorb/total. Ancre deja posee
-    -- (BuildAbsorb) au bord meneur du remplissage : il suit la vie automatiquement.
-    if frame.absorb then
-        local w = (absorb > 0 and total > 0) and bar:GetWidth() or 0
-        if w and w > 0 then
-            frame.absorb:SetWidth(math.max(1, w * absorb / total))
-            frame.absorb:Show()
-            if frame.absorbEdge then frame.absorbEdge:Show() end
-        else
-            frame.absorb:Hide()
-            if frame.absorbEdge then frame.absorbEdge:Hide() end
-        end
-    end
-
     -- Couleur unie (classe ou reaction/perso) ; le relief vient du gloss vertical.
     local r, g, b = Elements.GetClassColors(unit, frame.config)
     if not r then r, g, b = Elements.GetUnitColor(unit, frame.config) end
     PaintBar(bar, r, g, b, r, g, b)
+
+    -- Largeur du segment bouclier, proportionnelle a absorb/total. Ancre deja posee
+    -- (BuildAbsorb) au bord meneur du remplissage : il suit la vie automatiquement.
+    -- La base reprend la couleur de classe (comme la vie), le voile blanc
+    -- (absorbTint) l'eclaircit en laissant transparaitre cette teinte.
+    if frame.absorb then
+        local w = (absorb > 0 and total > 0) and bar:GetWidth() or 0
+        if w and w > 0 then
+            frame.absorb:SetWidth(math.max(1, w * absorb / total))
+            frame.absorb:SetVertexColor(r, g, b, 1)
+            frame.absorb:Show()
+            if frame.absorbTint then frame.absorbTint:Show() end
+            if frame.absorbEdge then frame.absorbEdge:Show() end
+        else
+            frame.absorb:Hide()
+            if frame.absorbTint then frame.absorbTint:Hide() end
+            if frame.absorbEdge then frame.absorbEdge:Hide() end
+        end
+    end
     if frame.richText then
         -- 3 zones : PV actuel / max separes + pourcentage centre
         if frame.healthText then
