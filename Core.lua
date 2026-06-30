@@ -419,6 +419,10 @@ function ns:ApplySavedAuras()
         if cfg then
             if data.showBuffs   ~= nil then cfg.showBuffs   = data.showBuffs   end
             if data.showDebuffs ~= nil then cfg.showDebuffs = data.showDebuffs end
+            -- Grille (taille des icones / icones par ligne / lignes max)
+            if data.auraSize    ~= nil then cfg.auraSize    = data.auraSize    end
+            if data.numAuras    ~= nil then cfg.numAuras    = data.numAuras    end
+            if data.maxAuraRows ~= nil then cfg.maxAuraRows = data.maxAuraRows end
             -- Filtres par type (seulement les miennes / les miennes plus grosses)
             for _, f in ipairs({ "buffOnlyMine", "debuffOnlyMine", "buffBigMine", "debuffBigMine" }) do
                 if data[f] ~= nil then cfg[f] = data[f] end
@@ -491,6 +495,25 @@ function ns:SetAuraFlag(key, kind, flag, value)
     if data then
         if ns.Elements.UpdateAuras then ns.Elements.UpdateAuras(data.frame) end
         if flag == "bigMine" and ns.Elements.AnchorAuras then ns.Elements.AnchorAuras(data.frame) end
+    end
+end
+
+-- Modifie un parametre de grille d'auras (field = "auraSize" | "numAuras" |
+-- "maxAuraRows") d'un cadre. Valeur entiere bornee a >= 0. Persiste puis reconstruit
+-- la grille a chaud : RebuildAuraGrid recree/masque les icones du pool selon le
+-- nouveau total, les redimensionne, re-ancre et re-remplit. Les icones d'aura sont
+-- de simples Frames non protegees : pas de restriction de combat.
+function ns:SetAuraGrid(key, field, value)
+    local cfg = ns.config[key]
+    if not cfg then return end
+    value = math.floor((value or 0) + 0.5)
+    if value < 0 then value = 0 end
+    cfg[field] = value
+    auraDB(key)[field] = value
+
+    local data = ns.registry[key]
+    if data and ns.Elements.RebuildAuraGrid then
+        ns.Elements.RebuildAuraGrid(data.frame)
     end
 end
 

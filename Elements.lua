@@ -984,22 +984,48 @@ function Elements.AnchorAuras(frame)
     Elements.AnchorAuraRow(frame, frame.debuffIcons, "debuffs")
 end
 
--- Construit (une seule fois) la grille d'icones d'un type. cfg.numAuras = icones
+-- Construit / redimensionne la grille d'icones d'un type. cfg.numAuras = icones
 -- PAR LIGNE ; cfg.maxAuraRows = nombre de lignes max (defaut 1). Total d'icones =
 -- numAuras * maxAuraRows. cfg.numAuras = 0 => rien.
+--
+-- Les icones vivent dans un POOL persistant (buffIconPool / debuffIconPool) qui ne
+-- fait que grandir : on ne detruit jamais une frame (impossible en WoW de toute
+-- facon) et on reutilise les icones excedentaires. La liste ACTIVE (buffIcons /
+-- debuffIcons) reference les `needed` premieres du pool ; le surplus est masque.
+-- Rejouable a chaud autant qu'on veut (un drag de slider numAuras/maxAuraRows ne
+-- cree donc pas une frame a chaque tick).
 local function BuildAuraRow(frame, kind)
     local cfg = frame.config
     local perRow = cfg.numAuras or 0
-    if perRow <= 0 then return end
     local rows = cfg.maxAuraRows or 1
     if rows < 1 then rows = 1 end
+    local needed = (perRow > 0) and (perRow * rows) or 0
     local size = cfg.auraSize or 18
-    local t = {}
-    for i = 1, perRow * rows do
-        t[i] = CreateAuraIcon(frame, size)
+
+    local poolKey = (kind == "buffs") and "buffIconPool" or "debuffIconPool"
+    local pool = frame[poolKey]
+    if not pool then pool = {}; frame[poolKey] = pool end
+
+    -- Cree les icones manquantes (le pool ne fait que grandir).
+    for i = #pool + 1, needed do
+        pool[i] = CreateAuraIcon(frame, size)
     end
-    if kind == "buffs" then frame.buffIcons = t else frame.debuffIcons = t end
-    return t
+    -- Masque le surplus au-dela du besoin courant.
+    for i = needed + 1, #pool do
+        pool[i]:Hide()
+    end
+
+    -- Liste active = les `needed` premieres du pool, remises a la taille courante
+    -- (FillAuras la re-applique aussi, mais on la pose ici pour que l'ancrage et
+    -- l'apercu soient corrects meme sans unite chargee).
+    local active = {}
+    for i = 1, needed do
+        local ic = pool[i]
+        ic:SetSize(size, size)
+        active[i] = ic
+    end
+    if kind == "buffs" then frame.buffIcons = active else frame.debuffIcons = active end
+    return active
 end
 
 -- Construit les rangees de buffs/debuffs (l'ancrage est gere par AnchorAuras).
@@ -1011,6 +1037,18 @@ function Elements.CreateAuras(frame)
     Elements.AnchorAuras(frame)
 end
 
+-- Reconstruit a chaud la grille (apres un changement de numAuras / maxAuraRows /
+-- auraSize via /mf config). Ne reconstruit que les types deja batis (un type
+-- masque n'a pas de liste active ; il sera bati a la volee par SetAuraTypeShown).
+-- Re-ancre + re-remplit pour refleter la nouvelle disposition immediatement.
+function Elements.RebuildAuraGrid(frame)
+    local cfg = frame.config
+    if cfg.showBuffs   and frame.buffIcons   then BuildAuraRow(frame, "buffs")   end
+    if cfg.showDebuffs and frame.debuffIcons then BuildAuraRow(frame, "debuffs") end
+    Elements.AnchorAuras(frame)
+    Elements.UpdateAuras(frame)
+end
+
 -- Bascule a chaud l'affichage d'un type d'aura (buffs/debuffs). Construit la
 -- rangee a la demande si elle n'existait pas (cas ou le type etait masque a la
 -- creation). Les icones d'aura sont de simples Frames non protegees : pas de
@@ -1020,7 +1058,10 @@ function Elements.SetAuraTypeShown(frame, kind, shown)
     if kind == "buffs" then cfg.showBuffs = shown else cfg.showDebuffs = shown end
     local icons = (kind == "buffs") and frame.buffIcons or frame.debuffIcons
     if shown then
-        if not icons then icons = BuildAuraRow(frame, kind) end
+        -- Toujours (re)batir : BuildAuraRow est idempotent (pool) et garantit que le
+        -- compte / la taille refletent ns.config, meme si numAuras / maxAuraRows /
+        -- auraSize ont change pendant que le type etait masque.
+        icons = BuildAuraRow(frame, kind)
         if icons then
             Elements.AnchorAuras(frame)
             Elements.UpdateAuras(frame)
