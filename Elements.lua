@@ -309,7 +309,7 @@ local function BuildAbsorb(frame)
     -- dosage). Couvre exactement la base (SetAllPoints), suit donc sa largeur.
     local tint = bar:CreateTexture(nil, "ARTWORK", nil, 6)
     tint:SetTexture(ns.media.statusbar)
-    tint:SetVertexColor(1, 1, 1, 0.6)
+    tint:SetVertexColor(0.9, 0.9, 0.9, 0.6)   -- a peine grise (pas blanc pur)
     tint:SetAllPoints(seg)
     tint:Hide()
     frame.absorbTint = tint
