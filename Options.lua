@@ -687,7 +687,32 @@ local GROWTH_OPTIONS = {
     { key = "UP",    label = "Haut"   },
 }
 
-local auraState = { currentKey = nil, keys = {}, selButtons = {}, buffs = nil, debuffs = nil }
+local auraState = { currentKey = nil, keys = {}, selButtons = {}, buffs = nil, debuffs = nil, gridSliders = {} }
+
+-- Grille d'auras du cadre courant : taille des icones + icones par ligne + lignes
+-- max. Reglage PAR CADRE (partage buffs et debuffs, comme le modele auraSize /
+-- numAuras / maxAuraRows de Config.lua). Applique a chaud via ns:SetAuraGrid.
+local AURA_GRID_SLIDERS = {
+    { field = "auraSize",    label = "Taille",     min = 10, max = 40, step = 1, default = 18 },
+    { field = "numAuras",    label = "Par ligne",  min = 1,  max = 12, step = 1, default = 6  },
+    { field = "maxAuraRows", label = "Lignes max", min = 1,  max = 6,  step = 1, default = 1  },
+}
+
+-- Recharge les sliders de grille depuis ns.config[currentKey] (sans declencher de
+-- sauvegarde : flag suppress). Borne l'affichage a l'echelle du slider au cas ou
+-- Config.lua sortirait des limites.
+local function refreshAuraGridSliders()
+    local cfg = auraState.currentKey and ns.config[auraState.currentKey]
+    for _, s in ipairs(auraState.gridSliders) do
+        local info = s.info
+        local v = (cfg and cfg[info.field]) or info.default
+        if v < info.min then v = info.min elseif v > info.max then v = info.max end
+        s.suppress = true
+        s:SetValue(v)
+        s.suppress = false
+        s.valueLabel:SetText(info.label .. " : " .. math.floor(v + 0.5))
+    end
+end
 
 -- Liste deroulante generique (UIDropDownMenu). onSelect(key) au choix.
 local function makeDropdown(name, parent, width, options, onSelect)
@@ -775,6 +800,7 @@ end
 
 local function refreshAurasPanel()
     if auraState.updatePreviewLabel then auraState.updatePreviewLabel() end
+    refreshAuraGridSliders()
     if not auraState.currentKey then return end
     for key, btn in pairs(auraState.selButtons) do
         if key == auraState.currentKey then btn:LockHighlight() else btn:UnlockHighlight() end
@@ -945,6 +971,35 @@ local function buildAuraColumn(panel, x, kind, title, withCast)
     W.y:SetPoint("LEFT", yLbl, "RIGHT", 6, 0)
 end
 
+-- Slider compact d'un parametre de grille d'auras (taille / par ligne / lignes
+-- max), applique au cadre courant via ns:SetAuraGrid (apercu live immediat).
+local function makeAuraGridSlider(panel, name, info)
+    local s = CreateFrame("Slider", name, panel, "OptionsSliderTemplate")
+    s:SetWidth(106)
+    s:SetMinMaxValues(info.min, info.max)
+    s:SetValueStep(info.step)
+    if s.SetObeyStepOnDrag then s:SetObeyStepOnDrag(true) end
+    local low  = s.Low  or _G[name .. "Low"]
+    local high = s.High or _G[name .. "High"]
+    if low  then low:SetText("")  end   -- min/max masques : le label central suffit
+    if high then high:SetText("") end
+    s.valueLabel = s.Text or _G[name .. "Text"]
+    if not s.valueLabel then
+        s.valueLabel = s:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        s.valueLabel:SetPoint("BOTTOM", s, "TOP", 0, 2)
+    end
+    s.info = info
+    s:SetScript("OnValueChanged", function(self, value)
+        if self.suppress then return end
+        value = math.floor(value + 0.5)
+        self.valueLabel:SetText(info.label .. " : " .. value)
+        if auraState.currentKey then
+            ns:SetAuraGrid(auraState.currentKey, info.field, value)
+        end
+    end)
+    return s
+end
+
 -- Onglet 5 : auras (affichage + ancrage par type)
 local function buildAurasPanel(panel)
     local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -994,11 +1049,18 @@ local function buildAurasPanel(panel)
     buildAuraColumn(panel, 8,   "buffs",   "Buffs",   true)
     buildAuraColumn(panel, 210, "debuffs", "Debuffs", true)
 
-    local note = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    note:SetPoint("BOTTOMLEFT", 4, 4)
-    note:SetWidth(390)
-    note:SetJustifyH("LEFT")
-    note:SetText("Icones par ligne / lignes max / taille : |cffffff00numAuras|r / |cffffff00maxAuraRows|r / |cffffff00auraSize|r dans Config.lua.")
+    -- Grille du cadre courant (taille / par ligne / lignes max), bande horizontale
+    -- en bas du panneau. Reglage PAR CADRE, partage buffs et debuffs.
+    local gTitle = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    gTitle:SetPoint("TOPLEFT", 8, -364)
+    gTitle:SetText("Grille du cadre selectionne (buffs |cffaaaaaaet|r debuffs)")
+
+    wipe(auraState.gridSliders)
+    for i, info in ipairs(AURA_GRID_SLIDERS) do
+        local s = makeAuraGridSlider(panel, "MarcelFramerAuraGrid" .. info.field, info)
+        s:SetPoint("TOPLEFT", 22 + (i - 1) * 134, -398)
+        auraState.gridSliders[i] = s
+    end
 
     refreshAurasPanel()
 end
