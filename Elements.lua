@@ -274,6 +274,57 @@ local function AddHealthGloss(bar, mirror)
     bar.glossEdge = edge
 end
 
+-- Segment "bouclier d'absorption" facon UI Blizzard. Le max LOGIQUE de la barre
+-- de vie est agrandi a (PV max + absorb) dans UpdateHealth, sans changer sa largeur
+-- physique : la vie occupe alors cur/total et ce segment clair occupe la portion
+-- absorb/total JUSTE APRES le remplissage de vie. On l'ancre au bord meneur du
+-- remplissage (sa droite en normal, sa gauche en miroir) pour qu'il suive
+-- automatiquement la position de la vie ; seule sa largeur est (re)posee a chaque
+-- UpdateHealth. Le segment reprend la couleur de classe (base) eclaircie par un
+-- voile blanc translucide (absorbTint) + fin lisere brillant sur le bord exterieur.
+-- Masque tant qu'il n'y a pas d'absorption.
+local function BuildAbsorb(frame)
+    local bar = frame.health
+    local fill = bar:GetStatusBarTexture()
+    if not fill then return end
+    local mirror = frame.config.mirror
+
+    -- Base du segment : peinte avec la COULEUR DE CLASSE dans UpdateHealth (comme
+    -- la barre de vie), opaque, pour que le bouclier reprenne la teinte de l'unite.
+    local seg = bar:CreateTexture(nil, "ARTWORK", nil, 5)
+    seg:SetTexture(ns.media.statusbar)
+    seg:SetVertexColor(1, 1, 1, 1)
+    if mirror then
+        seg:SetPoint("TOPRIGHT", fill, "TOPLEFT", 0, 0)
+        seg:SetPoint("BOTTOMRIGHT", fill, "BOTTOMLEFT", 0, 0)
+    else
+        seg:SetPoint("TOPLEFT", fill, "TOPRIGHT", 0, 0)
+        seg:SetPoint("BOTTOMLEFT", fill, "BOTTOMRIGHT", 0, 0)
+    end
+    seg:Hide()
+    frame.absorb = seg
+
+    -- Voile blanc translucide par-dessus la base : eclaircit le segment vers le
+    -- blanc tout en laissant transparaitre la couleur de classe (l'alpha regle le
+    -- dosage). Couvre exactement la base (SetAllPoints), suit donc sa largeur.
+    local tint = bar:CreateTexture(nil, "ARTWORK", nil, 6)
+    tint:SetTexture(ns.media.statusbar)
+    tint:SetVertexColor(0.9, 0.9, 0.9, 0.6)   -- a peine grise (pas blanc pur)
+    tint:SetAllPoints(seg)
+    tint:Hide()
+    frame.absorbTint = tint
+
+    -- lisere 1px brillant sur le bord exterieur du segment (cote oppose a la vie)
+    local edge = bar:CreateTexture(nil, "ARTWORK", nil, 7)
+    edge:SetColorTexture(1, 1, 1, 0.6)
+    local outer = mirror and "LEFT" or "RIGHT"
+    edge:SetPoint("TOP" .. outer, seg, "TOP" .. outer, 0, 0)
+    edge:SetPoint("BOTTOM" .. outer, seg, "BOTTOM" .. outer, 0, 0)
+    edge:SetWidth(1)
+    edge:Hide()
+    frame.absorbEdge = edge
+end
+
 -- Reflet haut de la barre de RESSOURCE : overlay sur la moitie haute du
 -- remplissage (blanc .16 -> transparent). CSS linear-gradient top 50%.
 local function AddPowerGloss(bar)
@@ -842,6 +893,9 @@ function Elements.BuildVisuals(frame)
     AddHealthGloss(health, mirror)
     if frame.power then AddPowerGloss(frame.power) end
 
+    -- Segment bouclier d'absorption (masque tant qu'il n'y a pas d'absorb)
+    BuildAbsorb(frame)
+
     -- Coins arrondis (best-effort, opt-in)
     if ns.config.roundedCorners then ApplyRoundedCorners(frame) end
 
@@ -1252,16 +1306,48 @@ end
 function Elements.UpdateHealth(frame)
     local unit = frame.unit
     if not unit or not UnitExists(unit) then return end
+    local cfg = frame.config
     local cur, max = UnitHealth(unit), UnitHealthMax(unit)
     local bar = frame.health
-    bar:SetMinMaxValues(0, max > 0 and max or 1)
+
+    -- Bouclier d'absorption (UI Blizzard) : on agrandit le max LOGIQUE de la barre
+    -- a (PV max + absorb) sans toucher a sa largeur physique. La vie occupe alors
+    -- cur/total et le segment bouclier occupe absorb/total juste apres (cf.
+    -- BuildAbsorb). Le texte et le pourcentage restent calcules sur les VRAIS PV
+    -- (cur/max) : 100% ne traque que les PV, jamais les boucliers.
+    local absorb = 0
+    if cfg.showAbsorb ~= false and UnitGetTotalAbsorbs then
+        absorb = UnitGetTotalAbsorbs(unit) or 0
+        if absorb < 0 then absorb = 0 end
+    end
+    local total = max + absorb
+
+    bar:SetMinMaxValues(0, total > 0 and total or 1)
     bar:SetValue(cur)
+
     -- Couleur unie (classe ou reaction/perso) ; le relief vient du gloss vertical.
     local r, g, b = Elements.GetClassColors(unit, frame.config)
     if not r then r, g, b = Elements.GetUnitColor(unit, frame.config) end
     PaintBar(bar, r, g, b, r, g, b)
 
-    local cfg = frame.config
+    -- Largeur du segment bouclier, proportionnelle a absorb/total. Ancre deja posee
+    -- (BuildAbsorb) au bord meneur du remplissage : il suit la vie automatiquement.
+    -- La base reprend la couleur de classe (comme la vie), le voile blanc
+    -- (absorbTint) l'eclaircit en laissant transparaitre cette teinte.
+    if frame.absorb then
+        local w = (absorb > 0 and total > 0) and bar:GetWidth() or 0
+        if w and w > 0 then
+            frame.absorb:SetWidth(math.max(1, w * absorb / total))
+            frame.absorb:SetVertexColor(r, g, b, 1)
+            frame.absorb:Show()
+            if frame.absorbTint then frame.absorbTint:Show() end
+            if frame.absorbEdge then frame.absorbEdge:Show() end
+        else
+            frame.absorb:Hide()
+            if frame.absorbTint then frame.absorbTint:Hide() end
+            if frame.absorbEdge then frame.absorbEdge:Hide() end
+        end
+    end
     if frame.richText then
         -- 3 zones : PV actuel / max separes + pourcentage centre
         if frame.healthText then
@@ -1610,7 +1696,7 @@ end
 --  Evenements unite (filtres par unite)
 -- ----------------------------------------------------------------------------
 local UNIT_EVENTS = {
-    "UNIT_HEALTH", "UNIT_MAXHEALTH",
+    "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_ABSORB_AMOUNT_CHANGED",
     "UNIT_POWER_UPDATE", "UNIT_MAXPOWER", "UNIT_DISPLAYPOWER",
     "UNIT_AURA", "UNIT_NAME_UPDATE", "UNIT_LEVEL",
     "UNIT_FLAGS", "UNIT_CLASSIFICATION_CHANGED",
@@ -1626,7 +1712,8 @@ end
 function Elements.OnEvent(self, event, arg1)
     local unit = self.unit
     if not unit or arg1 ~= unit then return end
-    if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
+    if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH"
+        or event == "UNIT_ABSORB_AMOUNT_CHANGED" then
         Elements.UpdateHealth(self)
     elseif event == "UNIT_POWER_UPDATE" or event == "UNIT_MAXPOWER" then
         Elements.UpdatePower(self)
